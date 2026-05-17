@@ -111,8 +111,9 @@ def _build_ffmpeg_command(
             # height_pct is % of output height (1920) → maps directly to fontsize
             height_pct = float(name_position.get("height_pct", 3.0))
             fontsize = max(20, round(1920 * height_pct / 100))
-            x_expr = f"({name_position['x_pct']}*W/100)"
-            y_expr = f"({name_position['y_pct']}*H/100)"
+            # drawtext uses w/h (lowercase) for video dimensions, NOT W/H
+            x_expr = f"({name_position['x_pct']}*w/100)"
+            y_expr = f"({name_position['y_pct']}*h/100)"
         else:
             fontsize = 60
             x_expr = "(w-text_w)/2"
