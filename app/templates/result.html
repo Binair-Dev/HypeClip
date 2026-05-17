@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Your Shorts{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-white mb-1">
+                <i class="fas fa-film text-accent mr-2"></i>Your Shorts
+            </h1>
+            <p class="text-gray-500">Session: <code class="text-xs bg-dark-700 px-1.5 py-0.5 rounded">{{ session_id }}</code></p>
+        </div>
+        <div class="flex items-center gap-3">
+            <a href="/" class="px-4 py-2.5 bg-dark-600 hover:bg-dark-500 rounded-xl text-sm text-white transition-colors">
+                <i class="fas fa-plus mr-1"></i> Generate More
+            </a>
+            <button
+                id="download-all-btn"
+                onclick="downloadAll()"
+                class="px-4 py-2.5 bg-accent hover:bg-accent-dark rounded-xl text-sm text-white font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled
+            >
+                <i class="fas fa-download mr-1"></i> Download All
+            </button>
+        </div>
+    </div>
+
+    <!-- Progress Section (shown while processing) -->
+    <div id="progress-section" class="glass rounded-xl p-6 mb-8">
+        <div class="flex items-center gap-3 mb-5">
+            <div id="progress-spinner">
+                <i class="fas fa-circle-notch fa-spin text-accent text-xl"></i>
+            </div>
+            <div id="progress-check" class="hidden">
+                <i class="fas fa-circle-check text-green-400 text-xl"></i>
+            </div>
+            <h2 class="text-lg font-semibold text-white" id="progress-title">Processing your Shorts...</h2>
+        </div>
+
+        <div id="progress-bars" class="space-y-4">
+            <!-- Dynamically populated -->
+        </div>
+    </div>
+
+    <!-- Results Grid -->
+    <div id="results-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {% if shorts %}
+            {% for short in shorts %}
+            <div class="glass rounded-xl overflow-hidden" data-filename="{{ short.filename }}">
+                <div class="aspect-[9/16] bg-dark-700 max-h-[500px]">
+                    <video
+                        controls
+                        preload="metadata"
+                        class="w-full h-full object-contain"
+                        poster="{{ short.thumbnail_url|default('') }}"
+                    >
+                        <source src="/download/{{ session_id }}/{{ short.filename }}" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="p-4">
+                    <h3 class="text-white text-sm font-medium truncate mb-3">{{ short.title|default('Short #' ~ loop.index) }}</h3>
+                    <a
+                        href="/download/{{ session_id }}/{{ short.filename }}"
+                        class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-accent hover:bg-accent-dark rounded-lg text-sm text-white font-medium transition-colors"
+                    >
+                        <i class="fas fa-download"></i> Download
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <!-- Empty state (no shorts yet — will be populated by polling) -->
+    <div id="no-results" class="hidden glass rounded-2xl p-12 text-center">
+        <i class="fas fa-hourglass-half text-4xl text-gray-600 mb-4 animate-pulse"></i>
+        <h2 class="text-xl font-semibold text-gray-300 mb-2">Waiting for results...</h2>
+        <p class="text-gray-500">Your Shorts are being generated. This may take a few minutes.</p>
+    </div>
+
+    <!-- All Done state -->
+    <div id="all-done" class="hidden glass rounded-2xl p-8 text-center mt-6">
+        <i class="fas fa-circle-check text-4xl text-green-400 mb-4"></i>
+        <h2 class="text-xl font-semibold text-white mb-2">All Shorts generated!</h2>
+        <p class="text-gray-400 mb-4">Your clips have been processed and are ready to download.</p>
+        <div class="flex items-center justify-center gap-3">
+            <a href="/" class="px-5 py-2.5 bg-accent hover:bg-accent-dark rounded-xl text-sm text-white font-medium transition-colors">
+                <i class="fas fa-plus mr-1"></i> Generate More
+            </a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const sessionId = '{{ session_id|e }}';
+    let pollInterval = null;
+    let allDone = false;
+
+    // Initial shorts data from template (may be empty if still processing)
+    const initialShorts = {{ shorts|tojson|safe }};
+
+    // Build progress bars for each clip (we derive from shorts or we poll)
+    const progressBars = document.getElementById('progress-bars');
+    const progressSection = document.getElementById('progress-section');
+    const progressSpinner = document.getElementById('progress-spinner');
+    const progressCheck = document.getElementById('progress-check');
+    const progressTitle = document.getElementById('progress-title');
+    const downloadAllBtn = document.getElementById('download-all-btn');
+    const allDoneEl = document.getElementById('all-done');
+    const resultsGrid = document.getElementById('results-grid');
+
+    // Track which clips we've seen
+    const knownClips = {};
+
+    function formatDuration(seconds) {
+        const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+        const s = String(seconds % 60).padStart(2, '0');
+        return m + ':' + s;
+    }
+
+    function addResultCard(short) {
+        // Avoid duplicates
+        if (document.querySelector('[data-filename="' + short.filename + '"]')) return;
+
+        const card = document.createElement('div');
+        card.className = 'glass rounded-xl overflow-hidden';
+        card.dataset.filename = short.filename;
+        card.innerHTML = `
+            <div class="aspect-[9/16] bg-dark-700 max-h-[500px]">
+                <video controls preload="metadata" class="w-full h-full object-contain">
+                    <source src="/download/${sessionId}/${short.filename}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+            <div class="p-4">
+                <h3 class="text-white text-sm font-medium truncate mb-3">${short.title || 'Short'}</h3>
+                <a href="/download/${sessionId}/${short.filename}"
+                   class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-accent hover:bg-accent-dark rounded-lg text-sm text-white font-medium transition-colors">
+                    <i class="fas fa-download"></i> Download
+                </a>
+            </div>
+        `;
+        resultsGrid.appendChild(card);
+    }
+
+    function updateProgress(data) {
+        if (!data || !data.clips) return;
+
+        progressBars.innerHTML = '';
+
+        let totalDone = 0;
+        const totalClips = data.clips.length;
+
+        data.clips.forEach(function(clip) {
+            const status = clip.status || 'pending';
+            const progress = clip.progress || 0;
+            const slug = clip.slug || clip.title || 'clip';
+
+            if (status === 'done' || status === 'completed') totalDone++;
+
+            // Status display
+            let statusHtml = '';
+            let barColor = 'bg-accent';
+            let barWidth = progress + '%';
+
+            if (status === 'done' || status === 'completed') {
+                statusHtml = '<i class="fas fa-circle-check text-green-400"></i> <span class="text-green-400">Done</span>';
+                barColor = 'bg-green-500';
+                barWidth = '100%';
+            } else if (status === 'error' || status === 'failed') {
+                statusHtml = '<i class="fas fa-circle-xmark text-red-400"></i> <span class="text-red-400">Failed</span>';
+                barColor = 'bg-red-500';
+                barWidth = '100%';
+            } else if (status === 'processing' || status === 'downloading' || status === 'rendering') {
+                const label = status.charAt(0).toUpperCase() + status.slice(1);
+                statusHtml = `<i class="fas fa-circle-notch fa-spin text-accent"></i> <span class="text-accent-light">${label}</span>`;
+            } else {
+                statusHtml = '<i class="fas fa-clock text-gray-500"></i> <span class="text-gray-500">Pending</span>';
+                barWidth = '0%';
+            }
+
+            const row = document.createElement('div');
+            row.innerHTML = `
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-sm text-gray-300 truncate max-w-[70%]">${clip.title || slug}</span>
+                    <span class="text-xs flex items-center gap-1.5">${statusHtml}</span>
+                </div>
+                <div class="w-full h-2 bg-dark-600 rounded-full overflow-hidden">
+                    <div class="h-full ${barColor} rounded-full transition-all duration-500" style="width: ${barWidth}"></div>
+                </div>
+            `;
+            progressBars.appendChild(row);
+
+            // If clip is done and has a filename, add result card
+            if ((status === 'done' || status === 'completed') && clip.filename) {
+                addResultCard(clip);
+            }
+        });
+
+        // Check if all done
+        if (totalDone === totalClips && totalClips > 0) {
+            finishAll();
+        }
+    }
+
+    function finishAll() {
+        allDone = true;
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+
+        progressSpinner.classList.add('hidden');
+        progressCheck.classList.remove('hidden');
+        progressTitle.textContent = 'All Shorts generated!';
+
+        // Collapse progress after a moment
+        setTimeout(function() {
+            progressSection.classList.add('hidden');
+            allDoneEl.classList.remove('hidden');
+        }, 2000);
+
+        downloadAllBtn.disabled = false;
+    }
+
+    async function pollProgress() {
+        try {
+            const resp = await fetch('/api/progress/' + sessionId);
+            if (!resp.ok) {
+                console.warn('Progress poll failed:', resp.status);
+                return;
+            }
+
+            const data = await resp.json();
+            updateProgress(data);
+
+        } catch(err) {
+            console.error('Poll error:', err);
+        }
+    }
+
+    // Download All (simple sequential download)
+    window.downloadAll = function() {
+        const cards = resultsGrid.querySelectorAll('[data-filename]');
+        cards.forEach(function(card, i) {
+            const filename = card.dataset.filename;
+            setTimeout(function() {
+                const a = document.createElement('a');
+                a.href = '/download/' + sessionId + '/' + filename;
+                a.download = filename;
+                a.click();
+            }, i * 500);
+        });
+    };
+
+    // --- Initialize ---
+
+    // If we already have shorts rendered, show them
+    if (initialShorts && initialShorts.length > 0) {
+        downloadAllBtn.disabled = false;
+
+        // Check if all shorts have files (fully done)
+        const allHaveFiles = initialShorts.every(function(s) { return s.filename; });
+        if (allHaveFiles) {
+            progressSection.classList.add('hidden');
+            allDoneEl.classList.remove('hidden');
+        }
+    }
+
+    // Start polling for progress
+    pollInterval = setInterval(pollProgress, 2000);
+
+    // Also poll immediately
+    pollProgress();
+
+})();
+</script>
+{% endblock %}

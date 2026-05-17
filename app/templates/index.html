@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-[calc(100vh-8rem)] px-4">
+
+    <!-- Hero -->
+    <div class="text-center mb-10">
+        <h1 class="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight mb-4">
+            <span class="text-white">Hype</span><span class="text-accent-light">Clip</span>
+        </h1>
+        <p class="text-gray-400 text-lg sm:text-xl max-w-md mx-auto">
+            Transform Twitch Clips into Shorts — no account needed.
+        </p>
+    </div>
+
+    <!-- Search Card (glassmorphism) -->
+    <div class="glass rounded-2xl p-6 sm:p-8 w-full max-w-xl">
+        <label class="block text-sm font-medium text-gray-400 mb-3">
+            <i class="fas fa-magnifying-glass text-accent mr-1"></i>
+            Search for a Twitch streamer
+        </label>
+        <div class="relative">
+            <input
+                id="search-input"
+                type="text"
+                placeholder="e.g. shroud, pokimane, xqc..."
+                autocomplete="off"
+                class="w-full bg-dark-700 border border-white/10 rounded-xl px-4 py-3.5 pl-11
+                       text-white placeholder-gray-500 text-base
+                       focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50
+                       transition-all"
+            />
+            <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
+
+            <!-- Spinner -->
+            <div id="search-spinner" class="hidden absolute right-4 top-1/2 -translate-y-1/2">
+                <i class="fas fa-circle-notch fa-spin text-accent"></i>
+            </div>
+        </div>
+
+        <!-- Autocomplete Results -->
+        <div id="search-results" class="hidden mt-3 rounded-xl bg-dark-700 border border-white/10 overflow-hidden">
+            <!-- Populated by JS -->
+        </div>
+
+        <!-- Error message -->
+        <p id="search-error" class="hidden mt-3 text-red-400 text-sm">
+            <i class="fas fa-circle-exclamation mr-1"></i>
+            <span id="search-error-text"></span>
+        </p>
+    </div>
+
+    <!-- Quick hint -->
+    <p class="text-gray-600 text-sm mt-6 text-center">
+        <i class="fas fa-bolt text-accent/60 mr-1"></i>
+        Type a streamer name and press <kbd class="px-1.5 py-0.5 bg-dark-700 rounded text-gray-400 text-xs">Enter</kbd>
+    </p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const input = document.getElementById('search-input');
+    const spinner = document.getElementById('search-spinner');
+    const resultsContainer = document.getElementById('search-results');
+    const errorEl = document.getElementById('search-error');
+    const errorText = document.getElementById('search-error-text');
+
+    let debounceTimer = null;
+
+    function showError(msg) {
+        errorText.textContent = msg;
+        errorEl.classList.remove('hidden');
+    }
+
+    function hideError() {
+        errorEl.classList.add('hidden');
+    }
+
+    function hideResults() {
+        resultsContainer.classList.add('hidden');
+        resultsContainer.innerHTML = '';
+    }
+
+    function showResult(result) {
+        resultsContainer.classList.remove('hidden');
+
+        const item = document.createElement('a');
+        item.href = '/clips/' + encodeURIComponent(result.login);
+        item.className = 'flex items-center gap-4 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer';
+
+        const imgSize = 'w-10 h-10';
+        const placeholder = '<div class="w-10 h-10 rounded-full bg-dark-500 flex items-center justify-center text-gray-500"><i class="fas fa-user"></i></div>';
+        const avatar = result.profile_image_url
+            ? `<img src="${result.profile_image_url}" alt="" class="w-10 h-10 rounded-full object-cover" onerror="this.parentElement.innerHTML='${placeholder.replace(/'/g, "\\'")}'" />`
+            : placeholder;
+
+        const liveBadge = result.is_live
+            ? '<span class="flex items-center gap-1 text-xs text-red-400"><i class="fas fa-circle text-[6px]"></i> LIVE</span>'
+            : '<span class="text-xs text-gray-500">Offline</span>';
+
+        item.innerHTML = `
+            ${avatar}
+            <div class="flex-1 min-w-0">
+                <div class="text-white font-medium truncate">${result.display_name}</div>
+                <div class="flex items-center gap-2">${liveBadge}</div>
+            </div>
+            <i class="fas fa-chevron-right text-gray-600 text-xs"></i>
+        `;
+
+        resultsContainer.appendChild(item);
+    }
+
+    async function search(query) {
+        if (!query || query.length < 2) {
+            hideResults();
+            hideError();
+            return;
+        }
+
+        spinner.classList.remove('hidden');
+        hideError();
+
+        try {
+            const resp = await fetch('/search?q=' + encodeURIComponent(query));
+            if (!resp.ok) {
+                throw new Error('Search failed (' + resp.status + ')');
+            }
+
+            const data = await resp.json();
+
+            if (data.error) {
+                hideResults();
+                showError(data.error);
+                return;
+            }
+
+            if (!data || !data.login) {
+                hideResults();
+                showError('Streamer not found. Try another name.');
+                return;
+            }
+
+            // Show the single result
+            resultsContainer.innerHTML = '';
+            showResult(data);
+
+        } catch (err) {
+            console.error('Search error:', err);
+            showError('Something went wrong. Please try again.');
+        } finally {
+            spinner.classList.add('hidden');
+        }
+    }
+
+    // Debounced search on input
+    input.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        const query = this.value.trim();
+        if (query.length >= 2) {
+            debounceTimer = setTimeout(() => search(query), 400);
+        } else {
+            hideResults();
+            hideError();
+        }
+    });
+
+    // Enter key = redirect to first result
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const query = this.value.trim();
+            if (query.length >= 2) {
+                // If results are showing, click the first one
+                const firstResult = resultsContainer.querySelector('a');
+                if (firstResult) {
+                    window.location.href = firstResult.href;
+                } else {
+                    // Try searching and redirecting directly
+                    search(query);
+                }
+            }
+        }
+    });
+
+    // Auto-focus
+    input.focus();
+})();
+</script>
+{% endblock %}

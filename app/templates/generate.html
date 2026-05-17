@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+
+{% block title %}Generate Shorts{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- Back link -->
+    <a id="back-link" href="#" class="text-sm text-gray-500 hover:text-accent transition-colors mb-6 inline-block">
+        <i class="fas fa-arrow-left mr-1"></i> Back to clips
+    </a>
+
+    <h1 class="text-3xl font-bold text-white mb-2">
+        <i class="fas fa-wand-magic-sparkles text-accent mr-2"></i>Generate Shorts
+    </h1>
+    <p class="text-gray-500 mb-8">Review your selection and customize options below.</p>
+
+    <!-- Selected Clips List -->
+    <div class="glass rounded-xl p-5 mb-8">
+        <h2 class="text-lg font-semibold text-gray-200 mb-4">
+            <i class="fas fa-list-check text-accent mr-2"></i>
+            Selected Clips
+            <span id="clip-count" class="text-sm text-gray-500 font-normal ml-2"></span>
+        </h2>
+
+        <div id="clips-list" class="space-y-3">
+            <!-- Populated by JS from sessionStorage -->
+        </div>
+
+        <div id="no-clips" class="hidden text-center py-8">
+            <i class="fas fa-circle-exclamation text-2xl text-gray-600 mb-2"></i>
+            <p class="text-gray-500">No clips selected. Go back and select some clips first.</p>
+            <a href="/" class="inline-block mt-4 px-4 py-2 bg-dark-600 rounded-lg text-sm hover:bg-dark-500 transition-colors">
+                <i class="fas fa-magnifying-glass mr-1"></i> Search a streamer
+            </a>
+        </div>
+    </div>
+
+    <!-- Options -->
+    <div id="options-section" class="glass rounded-xl p-5 mb-8">
+        <h2 class="text-lg font-semibold text-gray-200 mb-5">
+            <i class="fas fa-sliders text-accent mr-2"></i>Options
+        </h2>
+
+        <div class="space-y-5">
+            <!-- Webcam toggle -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-white font-medium">Include Webcam</div>
+                    <div class="text-gray-500 text-sm">Extract and overlay the streamer's webcam feed</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="opt-webcam" class="sr-only peer" />
+                    <div class="w-11 h-6 bg-dark-500 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                </label>
+            </div>
+
+            <!-- Divider -->
+            <div class="border-t border-white/5"></div>
+
+            <!-- Streamer name toggle -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-white font-medium">Show Streamer Name</div>
+                    <div class="text-gray-500 text-sm">Add the streamer's name as text overlay on the Short</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="opt-name" class="sr-only peer" />
+                    <div class="w-11 h-6 bg-dark-500 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generate Button -->
+    <div class="text-center">
+        <button
+            id="start-btn"
+            onclick="startGeneration()"
+            class="px-10 py-4 bg-accent hover:bg-accent-dark text-white font-bold text-lg rounded-xl transition-all glow-accent disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+            disabled
+        >
+            <i class="fas fa-rocket mr-2"></i>
+            <span id="btn-text">Generate Shorts</span>
+        </button>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loading" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center">
+        <div class="glass rounded-2xl p-8 text-center max-w-sm mx-4">
+            <i class="fas fa-circle-notch fa-spin text-4xl text-accent mb-4"></i>
+            <h3 class="text-white text-lg font-semibold mb-2">Starting generation...</h3>
+            <p class="text-gray-400 text-sm">Please wait while we set up your Shorts.</p>
+        </div>
+    </div>
+
+    <!-- Error display -->
+    <div id="error-msg" class="hidden mt-6 glass rounded-xl p-4 text-center">
+        <i class="fas fa-triangle-exclamation text-red-400 text-xl mb-2"></i>
+        <p id="error-text" class="text-red-400 text-sm"></p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    const clipsList = document.getElementById('clips-list');
+    const noClips = document.getElementById('no-clips');
+    const clipCount = document.getElementById('clip-count');
+    const startBtn = document.getElementById('start-btn');
+    const btnText = document.getElementById('btn-text');
+    const optionsSection = document.getElementById('options-section');
+    const backLink = document.getElementById('back-link');
+
+    let clips = [];
+
+    // Load clips from sessionStorage
+    try {
+        const stored = sessionStorage.getItem('selected_clips');
+        if (stored) clips = JSON.parse(stored);
+    } catch(e) {
+        clips = [];
+    }
+
+    // If no clips, show empty state
+    if (clips.length === 0) {
+        noClips.classList.remove('hidden');
+        clipsList.classList.add('hidden');
+        optionsSection.classList.add('hidden');
+    } else {
+        // Back link → try to reconstruct clips page URL
+        // We don't have the streamer_login in sessionStorage, default to home
+        backLink.href = document.referrer || '/';
+
+        clipCount.textContent = '(' + clips.length + ')';
+        btnText.textContent = 'Generate ' + clips.length + ' Short' + (clips.length > 1 ? 's' : '');
+        startBtn.disabled = false;
+
+        // Render clip list
+        clips.forEach(function(clip, i) {
+            const duration = clip.duration || 0;
+            const mm = String(Math.floor(duration / 60)).padStart(2, '0');
+            const ss = String(duration % 60).padStart(2, '0');
+
+            const item = document.createElement('div');
+            item.className = 'flex items-center gap-4 p-3 rounded-lg bg-dark-700/50 hover:bg-dark-600/50 transition-colors';
+            item.innerHTML = `
+                <span class="text-gray-500 text-sm font-mono w-6 text-center">${i + 1}</span>
+                <img src="${clip.thumbnail_url || ''}" alt="" class="w-24 h-14 object-cover rounded-md bg-dark-600 flex-shrink-0"
+                     onerror="this.style.display='none'" />
+                <div class="flex-1 min-w-0">
+                    <div class="text-white text-sm font-medium truncate">${clip.title || 'Untitled Clip'}</div>
+                    <div class="text-gray-500 text-xs mt-0.5">
+                        <i class="fas fa-clock mr-1"></i>${mm}:${ss}
+                    </div>
+                </div>
+                <button onclick="removeClip(${i})" class="text-gray-500 hover:text-red-400 transition-colors p-1" title="Remove">
+                    <i class="fas fa-trash-can text-sm"></i>
+                </button>
+            `;
+            clipsList.appendChild(item);
+        });
+    }
+
+    // Remove a clip from selection
+    window.removeClip = function(index) {
+        clips.splice(index, 1);
+        sessionStorage.setItem('selected_clips', JSON.stringify(clips));
+        // Re-render
+        clipsList.innerHTML = '';
+        clips.forEach(function(clip, i) {
+            const duration = clip.duration || 0;
+            const mm = String(Math.floor(duration / 60)).padStart(2, '0');
+            const ss = String(duration % 60).padStart(2, '0');
+
+            const item = document.createElement('div');
+            item.className = 'flex items-center gap-4 p-3 rounded-lg bg-dark-700/50 hover:bg-dark-600/50 transition-colors';
+            item.innerHTML = `
+                <span class="text-gray-500 text-sm font-mono w-6 text-center">${i + 1}</span>
+                <img src="${clip.thumbnail_url || ''}" alt="" class="w-24 h-14 object-cover rounded-md bg-dark-600 flex-shrink-0"
+                     onerror="this.style.display='none'" />
+                <div class="flex-1 min-w-0">
+                    <div class="text-white text-sm font-medium truncate">${clip.title || 'Untitled Clip'}</div>
+                    <div class="text-gray-500 text-xs mt-0.5">
+                        <i class="fas fa-clock mr-1"></i>${mm}:${ss}
+                    </div>
+                </div>
+                <button onclick="removeClip(${i})" class="text-gray-500 hover:text-red-400 transition-colors p-1" title="Remove">
+                    <i class="fas fa-trash-can text-sm"></i>
+                </button>
+            `;
+            clipsList.appendChild(item);
+        });
+
+        clipCount.textContent = '(' + clips.length + ')';
+        btnText.textContent = 'Generate ' + clips.length + ' Short' + (clips.length > 1 ? 's' : '');
+
+        if (clips.length === 0) {
+            noClips.classList.remove('hidden');
+            clipsList.classList.add('hidden');
+            optionsSection.classList.add('hidden');
+            startBtn.disabled = true;
+        }
+    };
+
+    // Start generation
+    window.startGeneration = async function() {
+        if (clips.length === 0) return;
+
+        const loading = document.getElementById('loading');
+        const errorEl = document.getElementById('error-msg');
+        const errorText = document.getElementById('error-text');
+        errorEl.classList.add('hidden');
+
+        const webcam = document.getElementById('opt-webcam').checked;
+        const showName = document.getElementById('opt-name').checked;
+
+        loading.classList.remove('hidden');
+
+        try {
+            const resp = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clips: clips,
+                    options: {
+                        include_webcam: webcam,
+                        show_name: showName,
+                    }
+                })
+            });
+
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.error || 'Generation failed (' + resp.status + ')');
+            }
+
+            const data = await resp.json();
+
+            if (data.session_id) {
+                // Redirect to result page
+                window.location.href = '/result/' + data.session_id;
+            } else {
+                throw new Error('No session ID returned');
+            }
+        } catch(err) {
+            console.error('Generation error:', err);
+            loading.classList.add('hidden');
+            errorText.textContent = err.message;
+            errorEl.classList.remove('hidden');
+        }
+    };
+})();
+</script>
+{% endblock %}
