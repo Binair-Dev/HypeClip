@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # HypeClip/
 OUTPUT_BASE = _PROJECT_ROOT / "output"
+_CACHE_DIR = OUTPUT_BASE / "_cache"
 
 # Font shipped with the project (fallback to a system font)
 _HEAVITAS_FONT = _PROJECT_ROOT / "pipeline" / "fonts" / "Heavitas.ttf"
@@ -268,8 +269,8 @@ class ShortsService:
 
         Steps:
         1. Obtain download URL via TwitchService
-        2. Download the clip to the session directory
-        3. (Optional) Detect webcam region
+        2. Download the clip (reuse cache if available)
+        3. (Optional) Detect webcam region or use user-provided region
         4. Build & run FFmpeg command
         """
         session_dir = OUTPUT_BASE / session_id
@@ -281,16 +282,46 @@ class ShortsService:
         if not download_url:
             raise RuntimeError(f"Could not obtain download URL for clip {slug}")
 
-        # --- 2. Download clip ---------------------------------------------
+        # --- 2. Download clip (reuse cache if available) -------------------
         self._update_clip_status(session_id, slug, "processing", 25)
-        clip_path = session_dir / f"{slug}.mp4"
-        self._download_file(download_url, clip_path)
+
+        # Ensure cache directory exists
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+        cached_clip = _CACHE_DIR / f"{slug}.mp4"
+        if cached_clip.exists():
+            log.info("Reusing cached clip for %s", slug)
+            clip_path = session_dir / f"{slug}.mp4"
+            import shutil
+            shutil.copy2(str(cached_clip), str(clip_path))
+        else:
+            clip_path = session_dir / f"{slug}.mp4"
+            self._download_file(download_url, clip_path)
+            # Also copy to cache for future reuse
+            try:
+                import shutil
+                shutil.copy2(str(clip_path), str(cached_clip))
+            except OSError:
+                log.warning("Could not cache clip %s", slug)
 
         # --- 3. Webcam detection (optional) --------------------------------
         webcam_region = None
         if options.get("webcam"):
             self._update_clip_status(session_id, slug, "processing", 40)
-            webcam_region = detect_webcam_region_only(str(clip_path), user_id=session_id)
+            # If user provided a webcam_region in the clip data, use it directly
+            user_region = clip.get("webcam_region")
+            if user_region and isinstance(user_region, dict):
+                x = int(user_region.get("x", 0))
+                y = int(user_region.get("y", 0))
+                w = int(user_region.get("w", 0))
+                h = int(user_region.get("h", 0))
+                if w > 0 and h > 0:
+                    webcam_region = (x, y, w, h)
+                    log.info("Using user-provided webcam region for %s: %s", slug, webcam_region)
+                else:
+                    webcam_region = detect_webcam_region_only(str(clip_path), user_id=session_id)
+            else:
+                webcam_region = detect_webcam_region_only(str(clip_path), user_id=session_id)
 
         # --- 4. Build and run FFmpeg ---------------------------------------
         self._update_clip_status(session_id, slug, "processing", 55)
