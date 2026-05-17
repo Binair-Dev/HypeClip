@@ -984,42 +984,45 @@
         const canvas = document.getElementById('position-canvas');
         const aspect = canvas._overlayAspect;
         const minSize = 40;
+        const cw = canvas.width;
+        const ch = canvas.height;
 
         if (posResizeHandle === 'br') {
-            // Scale from top-left anchor
             var newW = pos.x - posOverlayX;
-            newW = Math.max(minSize, newW);
+            newW = Math.max(minSize, Math.min(newW, cw - posOverlayX));
             posOverlayW = newW;
             posOverlayH = newW / aspect;
         } else if (posResizeHandle === 'bl') {
-            // Scale from top-right anchor
             var right = posOverlayX + posOverlayW;
             var newW = right - pos.x;
-            newW = Math.max(minSize, newW);
+            newW = Math.max(minSize, Math.min(newW, right));
             posOverlayX = right - newW;
             posOverlayW = newW;
             posOverlayH = newW / aspect;
         } else if (posResizeHandle === 'tr') {
-            // Scale from bottom-left anchor
             var bottom = posOverlayY + posOverlayH;
             var newW = pos.x - posOverlayX;
-            newW = Math.max(minSize, newW);
+            newW = Math.max(minSize, Math.min(newW, cw - posOverlayX));
             posOverlayW = newW;
             var newH = newW / aspect;
+            if (newH > bottom) { newH = bottom; newW = newH * aspect; posOverlayW = newW; }
             posOverlayY = bottom - newH;
             posOverlayH = newH;
         } else if (posResizeHandle === 'tl') {
-            // Scale from bottom-right anchor
             var right = posOverlayX + posOverlayW;
             var bottom = posOverlayY + posOverlayH;
             var newW = right - pos.x;
-            newW = Math.max(minSize, newW);
+            newW = Math.max(minSize, Math.min(newW, right));
+            var newH = newW / aspect;
+            if (newH > bottom) { newH = bottom; newW = newH * aspect; }
             posOverlayX = right - newW;
             posOverlayW = newW;
-            var newH = newW / aspect;
             posOverlayY = bottom - newH;
             posOverlayH = newH;
         }
+
+        // Clamp final position
+        clampOverlayToCanvas();
 
         // Update slider to match
         var slider = document.getElementById('pos-size-slider');
@@ -1087,12 +1090,29 @@
         // Keep center point stable
         var cx = posOverlayX + posOverlayW / 2;
         var cy = posOverlayY + posOverlayH / 2;
-        posOverlayW = newW;
-        posOverlayH = newH;
         posOverlayX = cx - newW / 2;
         posOverlayY = cy - newH / 2;
+        posOverlayW = newW;
+        posOverlayH = newH;
+        // Clamp so overlay stays visible on canvas
+        clampOverlayToCanvas();
         drawPositionCanvas();
     };
+
+    function clampOverlayToCanvas() {
+        var canvas = document.getElementById('position-canvas');
+        if (!canvas) return;
+        var cw = canvas.width;
+        var ch = canvas.height;
+        // Don't let it go completely off-screen — at least 40px visible
+        var minVis = 40;
+        if (posOverlayW > cw) posOverlayW = cw;
+        if (posOverlayH > ch) posOverlayH = ch;
+        if (posOverlayX + posOverlayW < minVis) posOverlayX = minVis - posOverlayW;
+        if (posOverlayY + posOverlayH < minVis) posOverlayY = minVis - posOverlayH;
+        if (posOverlayX > cw - minVis) posOverlayX = cw - minVis;
+        if (posOverlayY > ch - minVis) posOverlayY = ch - minVis;
+    }
 
     window.confirmPosition = function() {
         var canvas = document.getElementById('position-canvas');
