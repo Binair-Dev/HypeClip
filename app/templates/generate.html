@@ -165,7 +165,16 @@
 
     <!-- Bottom bar -->
     <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
-        <div id="position-info" class="text-gray-500 text-xs font-mono"></div>
+        <div class="flex items-center gap-4">
+            <div id="position-info" class="text-gray-500 text-xs font-mono"></div>
+            <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-xs"><i class="fas fa-minimize"></i></span>
+                <input type="range" id="pos-size-slider" min="30" max="250" value="100"
+                       class="w-24 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
+                       oninput="onSizeSlider(this.value)">
+                <span class="text-gray-500 text-xs"><i class="fas fa-maximize"></i></span>
+            </div>
+        </div>
         <div class="flex gap-3">
             <button onclick="resetPosition()" class="px-5 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
                 <i class="fas fa-rotate-left mr-1"></i> Reset
@@ -206,8 +215,13 @@
     let posOverlayY = 0;  // webcam overlay y in position-canvas coords
     let posOverlayW = 0;  // webcam overlay width
     let posOverlayH = 0;  // webcam overlay height
+    let posBaseOverlayW = 0; // initial size for reset
+    let posBaseOverlayH = 0;
     let posDragging = false;
+    let posResizing = false;
+    let posResizeHandle = null;
     let posDragOffset = { x: 0, y: 0 };
+    const POS_HANDLE_SIZE = 12;
 
     // Canvas drawing state
     let canvasRect = null;
@@ -818,6 +832,14 @@
         // Store crop params for drawing
         canvas._cropSrc = { x: cropSrcX, y: cropSrcY, w: cropSrcW, h: cropSrcH };
         canvas._region = region;
+        canvas._overlayAspect = posOverlayW / posOverlayH;
+
+        // Store base size for reset
+        posBaseOverlayW = posOverlayW;
+        posBaseOverlayH = posOverlayH;
+
+        // Update size slider
+        document.getElementById('pos-size-slider').value = 100;
 
         drawPositionCanvas();
         setupPositionEvents();
@@ -852,11 +874,25 @@
         ctx.lineWidth = 2;
         ctx.strokeRect(posOverlayX, posOverlayY, posOverlayW, posOverlayH);
 
+        // Corner resize handles
+        ctx.fillStyle = '#00ff88';
+        const hs = POS_HANDLE_SIZE;
+        const corners = [
+            { x: posOverlayX, y: posOverlayY },
+            { x: posOverlayX + posOverlayW, y: posOverlayY },
+            { x: posOverlayX, y: posOverlayY + posOverlayH },
+            { x: posOverlayX + posOverlayW, y: posOverlayY + posOverlayH },
+        ];
+        corners.forEach(function(c) {
+            ctx.fillRect(c.x - hs / 2, c.y - hs / 2, hs, hs);
+        });
+
         // Update info
         const infoEl = document.getElementById('position-info');
         const xPct = ((posOverlayX / cw) * 100).toFixed(1);
         const yPct = ((posOverlayY / ch) * 100).toFixed(1);
-        infoEl.textContent = 'Position: x=' + xPct + '%  y=' + yPct + '%';
+        const scalePct = Math.round((posOverlayW / posBaseOverlayW) * 100);
+        infoEl.textContent = 'x=' + xPct + '%  y=' + yPct + '%  size=' + scalePct + '%';
     }
 
     function setupPositionEvents() {
@@ -909,7 +945,14 @@
 
     function onPosMouseDown(e) {
         const pos = getPosCanvasCoords(e);
-        // Check if clicking inside overlay
+        // Check corner handles first
+        const handle = hitPosHandle(pos.x, pos.y);
+        if (handle) {
+            posResizing = true;
+            posResizeHandle = handle;
+            return;
+        }
+        // Check if clicking inside overlay → drag
         if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
             pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
             posDragging = true;
@@ -920,9 +963,78 @@
         }
     }
 
+    function hitPosHandle(mx, my) {
+        const hs = POS_HANDLE_SIZE * 2; // hit area
+        const corners = [
+            { x: posOverlayX, y: posOverlayY, id: 'tl' },
+            { x: posOverlayX + posOverlayW, y: posOverlayY, id: 'tr' },
+            { x: posOverlayX, y: posOverlayY + posOverlayH, id: 'bl' },
+            { x: posOverlayX + posOverlayW, y: posOverlayY + posOverlayH, id: 'br' },
+        ];
+        for (var i = 0; i < corners.length; i++) {
+            var c = corners[i];
+            if (Math.abs(mx - c.x) <= hs && Math.abs(my - c.y) <= hs) {
+                return c.id;
+            }
+        }
+        return null;
+    }
+
+    function resizePosOverlay(pos) {
+        const canvas = document.getElementById('position-canvas');
+        const aspect = canvas._overlayAspect;
+        const minSize = 40;
+
+        if (posResizeHandle === 'br') {
+            // Scale from top-left anchor
+            var newW = pos.x - posOverlayX;
+            newW = Math.max(minSize, newW);
+            posOverlayW = newW;
+            posOverlayH = newW / aspect;
+        } else if (posResizeHandle === 'bl') {
+            // Scale from top-right anchor
+            var right = posOverlayX + posOverlayW;
+            var newW = right - pos.x;
+            newW = Math.max(minSize, newW);
+            posOverlayX = right - newW;
+            posOverlayW = newW;
+            posOverlayH = newW / aspect;
+        } else if (posResizeHandle === 'tr') {
+            // Scale from bottom-left anchor
+            var bottom = posOverlayY + posOverlayH;
+            var newW = pos.x - posOverlayX;
+            newW = Math.max(minSize, newW);
+            posOverlayW = newW;
+            var newH = newW / aspect;
+            posOverlayY = bottom - newH;
+            posOverlayH = newH;
+        } else if (posResizeHandle === 'tl') {
+            // Scale from bottom-right anchor
+            var right = posOverlayX + posOverlayW;
+            var bottom = posOverlayY + posOverlayH;
+            var newW = right - pos.x;
+            newW = Math.max(minSize, newW);
+            posOverlayX = right - newW;
+            posOverlayW = newW;
+            var newH = newW / aspect;
+            posOverlayY = bottom - newH;
+            posOverlayH = newH;
+        }
+
+        // Update slider to match
+        var slider = document.getElementById('pos-size-slider');
+        if (slider && posBaseOverlayW > 0) {
+            slider.value = Math.round((posOverlayW / posBaseOverlayW) * 100);
+        }
+    }
+
     function onPosMouseMove(e) {
         const canvas = document.getElementById('position-canvas');
-        if (posDragging) {
+        if (posResizing) {
+            const pos = getPosCanvasCoords(e);
+            resizePosOverlay(pos);
+            drawPositionCanvas();
+        } else if (posDragging) {
             const pos = getPosCanvasCoords(e);
             let nx = pos.x - posDragOffset.x;
             let ny = pos.y - posDragOffset.y;
@@ -933,10 +1045,15 @@
             posOverlayY = ny;
             drawPositionCanvas();
         } else {
-            // Update cursor
+            // Update cursor based on hover
             const pos = getPosCanvasCoords(e);
-            if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
-                pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
+            const handle = hitPosHandle(pos.x, pos.y);
+            if (handle === 'tl' || handle === 'br') {
+                canvas.style.cursor = 'nwse-resize';
+            } else if (handle === 'tr' || handle === 'bl') {
+                canvas.style.cursor = 'nesw-resize';
+            } else if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
+                       pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
                 canvas.style.cursor = 'grab';
             } else {
                 canvas.style.cursor = 'default';
@@ -945,18 +1062,35 @@
     }
 
     function onPosMouseUp() {
-        if (posDragging) {
-            posDragging = false;
-            var canvas = document.getElementById('position-canvas');
-            if (canvas) canvas.style.cursor = 'default';
-        }
+        posDragging = false;
+        posResizing = false;
+        posResizeHandle = null;
     }
 
     window.resetPosition = function() {
         var canvas = document.getElementById('position-canvas');
         if (!canvas) return;
+        posOverlayW = posBaseOverlayW;
+        posOverlayH = posBaseOverlayH;
         posOverlayX = (canvas.width - posOverlayW) / 2;
         posOverlayY = 10;
+        document.getElementById('pos-size-slider').value = 100;
+        drawPositionCanvas();
+    };
+
+    window.onSizeSlider = function(val) {
+        var canvas = document.getElementById('position-canvas');
+        if (!canvas || posBaseOverlayW <= 0) return;
+        var scale = parseInt(val) / 100;
+        var newW = posBaseOverlayW * scale;
+        var newH = posBaseOverlayH * scale;
+        // Keep center point stable
+        var cx = posOverlayX + posOverlayW / 2;
+        var cy = posOverlayY + posOverlayH / 2;
+        posOverlayW = newW;
+        posOverlayH = newH;
+        posOverlayX = cx - newW / 2;
+        posOverlayY = cy - newH / 2;
         drawPositionCanvas();
     };
 
@@ -966,7 +1100,8 @@
         // Save as percentage of 9:16 canvas
         webcamPositions[currentEditIndex] = {
             x_pct: parseFloat(((posOverlayX / canvas.width) * 100).toFixed(1)),
-            y_pct: parseFloat(((posOverlayY / canvas.height) * 100).toFixed(1))
+            y_pct: parseFloat(((posOverlayY / canvas.height) * 100).toFixed(1)),
+            size_pct: Math.round((posOverlayW / posBaseOverlayW) * 100)
         };
         closePositionModal();
         renderClipList();
@@ -975,6 +1110,8 @@
     window.closePositionModal = function() {
         document.getElementById('position-modal').classList.add('hidden');
         posDragging = false;
+        posResizing = false;
+        posResizeHandle = null;
         currentEditIndex = null;
     };
 
