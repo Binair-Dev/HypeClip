@@ -54,8 +54,10 @@ def api_results(session_id):
 @shorts_bp.route('/download/<session_id>/<filename>')
 def download(session_id, filename):
     """Download a generated file."""
-    output_dir = os.path.join('output', session_id)
-    filepath = os.path.join(output_dir, filename)
-    if os.path.exists(filepath):
-        return send_file(filepath, as_attachment=True)
+    from pathlib import Path
+    # Use the same absolute path as ShortsService
+    project_root = Path(__file__).resolve().parent.parent.parent  # HypeClip/
+    filepath = project_root / "output" / session_id / filename
+    if filepath.exists():
+        return send_file(str(filepath), as_attachment=True)
     return jsonify({'error': 'File not found'}), 404
