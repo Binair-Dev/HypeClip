@@ -40,9 +40,15 @@ def progress(session_id):
 @shorts_bp.route('/result/<session_id>')
 def result(session_id):
     """Serve the result page for a generation session."""
+    return render_template('result.html', shorts=[], session_id=session_id)
+
+
+@shorts_bp.route('/api/results/<session_id>')
+def api_results(session_id):
+    """Return generated shorts as JSON."""
     service = ShortsService()
     shorts = service.get_results(session_id)
-    return render_template('result.html', shorts=shorts, session_id=session_id)
+    return jsonify(shorts)
 
 
 @shorts_bp.route('/download/<session_id>/<filename>')

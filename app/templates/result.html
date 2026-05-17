@@ -47,35 +47,10 @@
 
     <!-- Results Grid -->
     <div id="results-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {% if shorts %}
-            {% for short in shorts %}
-            <div class="glass rounded-xl overflow-hidden" data-filename="{{ short.filename }}">
-                <div class="aspect-[9/16] bg-dark-700 max-h-[500px]">
-                    <video
-                        controls
-                        preload="metadata"
-                        class="w-full h-full object-contain"
-                        poster="{{ short.thumbnail_url|default('') }}"
-                    >
-                        <source src="/download/{{ session_id }}/{{ short.filename }}" type="video/mp4">
-                        Your browser does not support the video tag.
-                    </video>
-                </div>
-                <div class="p-4">
-                    <h3 class="text-white text-sm font-medium truncate mb-3">{{ short.title|default('Short #' ~ loop.index) }}</h3>
-                    <a
-                        href="/download/{{ session_id }}/{{ short.filename }}"
-                        class="flex items-center justify-center gap-2 w-full px-4 py-2 bg-accent hover:bg-accent-dark rounded-lg text-sm text-white font-medium transition-colors"
-                    >
-                        <i class="fas fa-download"></i> Download
-                    </a>
-                </div>
-            </div>
-            {% endfor %}
-        {% endif %}
+        <!-- Dynamically populated via JS -->
     </div>
 
-    <!-- Empty state (no shorts yet — will be populated by polling) -->
+    <!-- Empty state -->
     <div id="no-results" class="hidden glass rounded-2xl p-12 text-center">
         <i class="fas fa-hourglass-half text-4xl text-gray-600 mb-4 animate-pulse"></i>
         <h2 class="text-xl font-semibold text-gray-300 mb-2">Waiting for results...</h2>
@@ -103,11 +78,8 @@
     const sessionId = '{{ session_id|e }}';
     let pollInterval = null;
     let allDone = false;
+    let resultsFetched = false;
 
-    // Initial shorts data from template (may be empty if still processing)
-    const initialShorts = {{ shorts|tojson|safe }};
-
-    // Build progress bars for each clip (we derive from shorts or we poll)
     const progressBars = document.getElementById('progress-bars');
     const progressSection = document.getElementById('progress-section');
     const progressSpinner = document.getElementById('progress-spinner');
@@ -116,15 +88,6 @@
     const downloadAllBtn = document.getElementById('download-all-btn');
     const allDoneEl = document.getElementById('all-done');
     const resultsGrid = document.getElementById('results-grid');
-
-    // Track which clips we've seen
-    const knownClips = {};
-
-    function formatDuration(seconds) {
-        const m = String(Math.floor(seconds / 60)).padStart(2, '0');
-        const s = String(seconds % 60).padStart(2, '0');
-        return m + ':' + s;
-    }
 
     function addResultCard(short) {
         // Avoid duplicates
@@ -157,31 +120,32 @@
         progressBars.innerHTML = '';
 
         let totalDone = 0;
+        let totalFailed = 0;
         const totalClips = data.clips.length;
 
         data.clips.forEach(function(clip) {
             const status = clip.status || 'pending';
             const progress = clip.progress || 0;
-            const slug = clip.slug || clip.title || 'clip';
+            const slug = clip.slug || 'clip';
 
-            if (status === 'done' || status === 'completed') totalDone++;
+            if (status === 'done') totalDone++;
+            if (status === 'failed') totalFailed++;
 
             // Status display
             let statusHtml = '';
             let barColor = 'bg-accent';
             let barWidth = progress + '%';
 
-            if (status === 'done' || status === 'completed') {
+            if (status === 'done') {
                 statusHtml = '<i class="fas fa-circle-check text-green-400"></i> <span class="text-green-400">Done</span>';
                 barColor = 'bg-green-500';
                 barWidth = '100%';
-            } else if (status === 'error' || status === 'failed') {
+            } else if (status === 'failed') {
                 statusHtml = '<i class="fas fa-circle-xmark text-red-400"></i> <span class="text-red-400">Failed</span>';
                 barColor = 'bg-red-500';
                 barWidth = '100%';
-            } else if (status === 'processing' || status === 'downloading' || status === 'rendering') {
-                const label = status.charAt(0).toUpperCase() + status.slice(1);
-                statusHtml = `<i class="fas fa-circle-notch fa-spin text-accent"></i> <span class="text-accent-light">${label}</span>`;
+            } else if (status === 'processing') {
+                statusHtml = '<i class="fas fa-circle-notch fa-spin text-accent"></i> <span class="text-accent-light">Processing</span>';
             } else {
                 statusHtml = '<i class="fas fa-clock text-gray-500"></i> <span class="text-gray-500">Pending</span>';
                 barWidth = '0%';
@@ -190,7 +154,7 @@
             const row = document.createElement('div');
             row.innerHTML = `
                 <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-sm text-gray-300 truncate max-w-[70%]">${clip.title || slug}</span>
+                    <span class="text-sm text-gray-300 truncate max-w-[70%]">${slug}</span>
                     <span class="text-xs flex items-center gap-1.5">${statusHtml}</span>
                 </div>
                 <div class="w-full h-2 bg-dark-600 rounded-full overflow-hidden">
@@ -198,15 +162,33 @@
                 </div>
             `;
             progressBars.appendChild(row);
-
-            // If clip is done and has a filename, add result card
-            if ((status === 'done' || status === 'completed') && clip.filename) {
-                addResultCard(clip);
-            }
         });
 
-        // Check if all done
-        if (totalDone === totalClips && totalClips > 0) {
+        // Check if all done (completed or failed)
+        if ((totalDone + totalFailed) === totalClips && totalClips > 0) {
+            fetchResults();
+        }
+    }
+
+    async function fetchResults() {
+        if (resultsFetched) return;
+        resultsFetched = true;
+
+        try {
+            const resp = await fetch('/api/results/' + sessionId);
+            if (!resp.ok) return;
+            const shorts = await resp.json();
+
+            if (shorts && shorts.length > 0) {
+                shorts.forEach(function(short) {
+                    addResultCard(short);
+                });
+                downloadAllBtn.disabled = false;
+            }
+
+            finishAll();
+        } catch(err) {
+            console.error('Fetch results error:', err);
             finishAll();
         }
     }
@@ -227,8 +209,6 @@
             progressSection.classList.add('hidden');
             allDoneEl.classList.remove('hidden');
         }, 2000);
-
-        downloadAllBtn.disabled = false;
     }
 
     async function pollProgress() {
@@ -240,6 +220,13 @@
             }
 
             const data = await resp.json();
+
+            // If server says completed/failed, fetch results immediately
+            if (data.status === 'completed' || data.status === 'failed') {
+                fetchResults();
+                return;
+            }
+
             updateProgress(data);
 
         } catch(err) {
@@ -261,24 +248,8 @@
         });
     };
 
-    // --- Initialize ---
-
-    // If we already have shorts rendered, show them
-    if (initialShorts && initialShorts.length > 0) {
-        downloadAllBtn.disabled = false;
-
-        // Check if all shorts have files (fully done)
-        const allHaveFiles = initialShorts.every(function(s) { return s.filename; });
-        if (allHaveFiles) {
-            progressSection.classList.add('hidden');
-            allDoneEl.classList.remove('hidden');
-        }
-    }
-
-    // Start polling for progress
+    // --- Start polling ---
     pollInterval = setInterval(pollProgress, 2000);
-
-    // Also poll immediately
     pollProgress();
 
 })();
