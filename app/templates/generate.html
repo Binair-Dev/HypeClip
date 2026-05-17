@@ -55,6 +55,23 @@
                 </label>
             </div>
 
+            <!-- Webcam select & position buttons (shown when opt-webcam is checked) -->
+            <div id="webcam-position-row" class="hidden flex items-center justify-between pl-4">
+                <div class="text-gray-400 text-sm">Select & position the webcam on the Short</div>
+                <div class="flex items-center gap-2">
+                    <button id="btn-select-webcam" onclick="openWebcamSelectorGlobal()"
+                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">
+                        <i class="fas fa-crop-simple mr-1"></i>Select Webcam
+                        <span id="webcam-select-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
+                    </button>
+                    <button id="btn-position-webcam" onclick="openPositionModalGlobal()"
+                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent hidden">
+                        <i class="fas fa-arrows-up-down-left-right mr-1"></i>Position Webcam
+                        <span id="webcam-position-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Divider -->
             <div class="border-t border-white/5"></div>
 
@@ -257,8 +274,8 @@
     let clips = [];
 
     // Webcam selection state (keyed by clip index)
-    let webcamRegions = {};   // { index: { x, y, w, h } } in pixel coords of original frame
-    let webcamPositions = {}; // { index: { x_pct, y_pct } } percentage of 9:16 canvas
+    let webcamRegion = null;    // { x, y, w, h } in pixel coords of original frame (global for all clips)
+    let webcamPosition = null;  // { x_pct, y_pct, height_pct } percentage of 9:16 canvas (global)
     let currentEditIndex = null;
     let frameImage = null;    // HTMLImageElement of the loaded frame
     let frameNaturalW = 0;
@@ -324,37 +341,14 @@
         btnText.textContent = 'Generate ' + clips.length + ' Short' + (clips.length > 1 ? 's' : '');
         startBtn.disabled = false;
 
-        const webcamOn = optWebcam.checked;
-
         clips.forEach(function(clip, i) {
             const duration = clip.duration || 0;
             const mm = String(Math.floor(duration / 60)).padStart(2, '0');
             const ss = String(duration % 60).padStart(2, '0');
-            const hasRegion = webcamRegions[i] !== undefined;
-            const hasPosition = webcamPositions[i] !== undefined;
 
             const item = document.createElement('div');
             item.className = 'flex items-center gap-4 p-3 rounded-lg bg-dark-700/50 hover:bg-dark-600/50 transition-colors';
             item.id = 'clip-item-' + i;
-
-            let webcamBtnHtml = '';
-            if (webcamOn) {
-                let btnLabel, btnClass;
-                if (hasPosition) {
-                    btnLabel = '✓ Positioned';
-                    btnClass = 'bg-green-600/30 text-green-400 border-green-500/40';
-                } else if (hasRegion) {
-                    btnLabel = 'Position Webcam';
-                    btnClass = 'bg-yellow-600/30 text-yellow-400 border-yellow-500/40';
-                } else {
-                    btnLabel = 'Select Webcam';
-                    btnClass = 'bg-dark-600 text-gray-300 border-transparent';
-                }
-                webcamBtnHtml = `
-                    <button onclick="openWebcamSelector(${i})" class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 ${btnClass}" title="Setup webcam">
-                        <i class="fas fa-crop-simple mr-1"></i>${btnLabel}
-                    </button>`;
-            }
 
             item.innerHTML = `
                 <span class="text-gray-500 text-sm font-mono w-6 text-center">${i + 1}</span>
@@ -366,7 +360,6 @@
                         <i class="fas fa-clock mr-1"></i>${mm}:${ss}
                     </div>
                 </div>
-                ${webcamBtnHtml}
                 <button onclick="removeClip(${i})" class="text-gray-500 hover:text-red-400 transition-colors p-1" title="Remove">
                     <i class="fas fa-trash-can text-sm"></i>
                 </button>
@@ -375,8 +368,14 @@
         });
     }
 
-    // Webcam toggle → re-render to show/hide webcam buttons
+    // Webcam toggle → show/hide webcam buttons row + re-render clip list
     optWebcam.addEventListener('change', function() {
+        var row = document.getElementById('webcam-position-row');
+        if (this.checked) {
+            row.classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
         renderClipList();
     });
 
@@ -393,23 +392,6 @@
     // Remove a clip from selection
     window.removeClip = function(index) {
         clips.splice(index, 1);
-        // Re-index webcam regions
-        const newRegions = {};
-        Object.keys(webcamRegions).forEach(function(k) {
-            const ki = parseInt(k);
-            if (ki < index) newRegions[ki] = webcamRegions[ki];
-            else if (ki > index) newRegions[ki - 1] = webcamRegions[ki];
-        });
-        webcamRegions = newRegions;
-        // Re-index webcam positions
-        const newPositions = {};
-        Object.keys(webcamPositions).forEach(function(k) {
-            const ki = parseInt(k);
-            if (ki < index) newPositions[ki] = webcamPositions[ki];
-            else if (ki > index) newPositions[ki - 1] = webcamPositions[ki];
-        });
-        webcamPositions = newPositions;
-
         sessionStorage.setItem('selected_clips', JSON.stringify(clips));
         renderClipList();
 
@@ -421,9 +403,14 @@
         }
     };
 
-    // ---- Webcam modal ----
-    window.openWebcamSelector = async function(index) {
-        currentEditIndex = index;
+    // ---- Webcam modal (global — same for all clips) ----
+    window.openWebcamSelectorGlobal = async function() {
+        if (clips.length === 0) {
+            alert('Please select at least one clip first.');
+            return;
+        }
+        // Use first clip to load frame
+        currentEditIndex = 0;
         const modal = document.getElementById('webcam-modal');
         const loading = document.getElementById('webcam-loading');
         const canvasWrap = document.getElementById('webcam-canvas-wrap');
@@ -436,14 +423,14 @@
         hasSelection = false;
 
         // Pre-populate if region already set
-        if (webcamRegions[index]) {
-            selRect = { ...webcamRegions[index] };
+        if (webcamRegion) {
+            selRect = { ...webcamRegion };
             hasSelection = true;
         } else {
             selRect = { x: 0, y: 0, w: 0, h: 0 };
         }
 
-        const slug = clips[index].slug;
+        const slug = clips[0].slug;
 
         try {
             const img = new Image();
@@ -460,10 +447,10 @@
             frameNaturalH = img.naturalHeight;
 
             // If region already exists, skip straight to position modal
-            if (webcamRegions[index]) {
+            if (webcamRegion) {
                 loading.classList.add('hidden');
                 modal.classList.add('hidden');
-                openPositionModal(index);
+                openPositionModalGlobal();
                 return;
             }
 
@@ -503,8 +490,8 @@
         canvas.height = Math.round(ch);
 
         // If we had a selection, scale it to canvas coords
-        if (hasSelection && webcamRegions[currentEditIndex]) {
-            const r = webcamRegions[currentEditIndex];
+        if (hasSelection && webcamRegion) {
+            const r = webcamRegion;
             const scaleX = canvas.width / frameNaturalW;
             const scaleY = canvas.height / frameNaturalH;
             selRect = {
@@ -808,16 +795,18 @@
         // Convert canvas coords to original image pixel coords (integers)
         const scaleX = frameNaturalW / canvas.width;
         const scaleY = frameNaturalH / canvas.height;
-        webcamRegions[currentEditIndex] = {
+        webcamRegion = {
             x: Math.round(selRect.x * scaleX),
             y: Math.round(selRect.y * scaleY),
             w: Math.round(selRect.w * scaleX),
             h: Math.round(selRect.h * scaleY)
         };
+        // Show select status checkmark, reveal position button
+        document.getElementById('webcam-select-status').classList.remove('hidden');
+        document.getElementById('btn-position-webcam').classList.remove('hidden');
         // Close webcam modal and open position modal
-        const savedIndex = currentEditIndex;
         closeWebcamModal();
-        openPositionModal(savedIndex);
+        openPositionModalGlobal();
     };
 
     window.closeWebcamModal = function() {
@@ -837,19 +826,22 @@
         }
     });
 
-    // ---- Position modal ----
-    function openPositionModal(index) {
-        currentEditIndex = index;
+    // ---- Position modal (global — same for all clips) ----
+    function openPositionModalGlobal() {
+        if (!webcamRegion) {
+            alert('Please select a webcam region first.');
+            return;
+        }
         const modal = document.getElementById('position-modal');
         modal.classList.remove('hidden');
 
         // Wait for layout to be calculated before measuring
         requestAnimationFrame(function() {
-            setupPositionCanvas(index);
+            setupPositionCanvas();
         });
     }
 
-    function setupPositionCanvas(index) {
+    function setupPositionCanvas() {
 
         // Setup the position canvas
         const canvas = document.getElementById('position-canvas');
@@ -872,7 +864,7 @@
         canvas.height = Math.round(ch);
 
         // Calculate the 9:16 center crop from the original frame
-        const region = webcamRegions[index];
+        const region = webcamRegion;
         const srcAspect = frameNaturalW / frameNaturalH;
         let cropSrcX, cropSrcY, cropSrcW, cropSrcH;
 
@@ -905,11 +897,11 @@
         }
 
         // Restore saved position & size, or default center-top
-        if (webcamPositions[index]) {
-            posOverlayX = (webcamPositions[index].x_pct / 100) * cw;
-            posOverlayY = (webcamPositions[index].y_pct / 100) * ch;
-            if (webcamPositions[index].height_pct !== undefined) {
-                posOverlayH = (webcamPositions[index].height_pct / 100) * ch;
+        if (webcamPosition) {
+            posOverlayX = (webcamPosition.x_pct / 100) * cw;
+            posOverlayY = (webcamPosition.y_pct / 100) * ch;
+            if (webcamPosition.height_pct !== undefined) {
+                posOverlayH = (webcamPosition.height_pct / 100) * ch;
                 posOverlayW = posOverlayH * (region.w / region.h); // maintain webcam aspect
             }
         } else {
@@ -923,8 +915,6 @@
         canvas._overlayAspect = posOverlayW / posOverlayH;
 
         // Store base size for reset (before any saved position resize)
-        // We need the "initial" base for the slider to be meaningful
-        // Re-calculate base from the default size (before height_pct restore)
         var initialH = region.h * scaleToCanvas;
         if (initialH > maxOverlayH) initialH = maxOverlayH;
         var initialW = initialH * (region.w / region.h);
@@ -1147,15 +1137,15 @@
         if (!canvas) return;
         var cw = canvas.width;
         var ch = canvas.height;
-        // Save position as percentage of 9:16 canvas
-        // Save size as percentage of final output height (1920) — this maps directly to FFmpeg
-        webcamPositions[currentEditIndex] = {
+        // Save position as percentage of 9:16 canvas (global — same for all clips)
+        webcamPosition = {
             x_pct: parseFloat(((posOverlayX / cw) * 100).toFixed(1)),
             y_pct: parseFloat(((posOverlayY / ch) * 100).toFixed(1)),
             height_pct: parseFloat(((posOverlayH / ch) * 100).toFixed(2))
         };
+        // Show position status checkmark
+        document.getElementById('webcam-position-status').classList.remove('hidden');
         closePositionModal();
-        renderClipList();
     };
 
     window.closePositionModal = function() {
@@ -1541,10 +1531,10 @@
                 broadcaster_name: clip.broadcaster_name,
                 thumbnail_url: clip.thumbnail_url,
             };
-            if (webcam && webcamRegions[i]) {
-                payload.webcam_region = webcamRegions[i];
-                if (webcamPositions[i]) {
-                    payload.webcam_position = webcamPositions[i];
+            if (webcam && webcamRegion) {
+                payload.webcam_region = webcamRegion;
+                if (webcamPosition) {
+                    payload.webcam_position = webcamPosition;
                 }
             }
             return payload;
