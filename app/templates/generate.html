@@ -1173,7 +1173,7 @@
     // ---- Name position modal ----
     window.openNameModal = async function() {
         if (clips.length === 0) return;
-        var broadcasterName = clips[0].broadcaster_name || 'STREAMER';
+        var broadcasterName = clips[0].broadcaster_name || clips[0].slug || 'STREAMER';
         var modal = document.getElementById('name-modal');
         modal.classList.remove('hidden');
 

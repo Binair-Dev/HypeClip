@@ -191,7 +191,7 @@
             btnEl.classList.add('border-white/10');
         } else {
             // Select
-            selectedClips.push({ slug, title, duration: parseInt(duration), thumbnail_url: thumbnail });
+            selectedClips.push({ slug, title, duration: parseInt(duration), thumbnail_url: thumbnail, broadcaster_name: '{{ streamer_login }}' });
             icon.className = 'fas fa-square-check text-accent-light';
             text.textContent = 'Selected';
             btnEl.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
