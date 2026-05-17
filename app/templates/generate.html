@@ -101,35 +101,42 @@
     </div>
 </div>
 
-<!-- Webcam selection modal -->
-<div id="webcam-modal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center">
-    <div class="glass rounded-2xl p-6 max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-white text-lg font-semibold">
+<!-- Webcam selection modal — fullscreen -->
+<div id="webcam-modal" class="hidden fixed inset-0 z-50 bg-black flex flex-col">
+    <!-- Top bar -->
+    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-b border-white/5 flex-shrink-0">
+        <div class="flex items-center gap-4">
+            <h3 class="text-white text-base font-semibold">
                 <i class="fas fa-crop-simple text-accent mr-2"></i>Select Webcam Area
             </h3>
-            <button onclick="closeWebcamModal()" class="text-gray-400 hover:text-white transition-colors">
-                <i class="fas fa-xmark text-xl"></i>
+            <p class="text-gray-500 text-xs hidden sm:block">Click &amp; drag to select · Drag corners to resize · Drag inside to move</p>
+        </div>
+        <button onclick="closeWebcamModal()" class="text-gray-400 hover:text-white transition-colors ml-4">
+            <i class="fas fa-xmark text-xl"></i>
+        </button>
+    </div>
+
+    <!-- Canvas area — takes all remaining space -->
+    <div class="flex-1 flex items-center justify-center overflow-hidden relative bg-dark-950">
+        <div id="webcam-loading" class="hidden flex items-center justify-center">
+            <i class="fas fa-circle-notch fa-spin text-4xl text-accent"></i>
+            <span class="text-gray-400 ml-4 text-lg">Loading frame...</span>
+        </div>
+        <div id="webcam-canvas-wrap" class="hidden w-full h-full flex items-center justify-center">
+            <canvas id="webcam-canvas" class="cursor-crosshair"></canvas>
+        </div>
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
+        <div id="webcam-coords" class="text-gray-500 text-xs font-mono"></div>
+        <div class="flex gap-3">
+            <button onclick="clearWebcamSelection()" class="px-5 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
+                <i class="fas fa-eraser mr-1"></i> Clear
             </button>
-        </div>
-        <p class="text-gray-400 text-sm mb-4">Click and drag on the image to select the webcam region. You can resize by dragging the corners.</p>
-        <div id="webcam-loading" class="hidden flex items-center justify-center py-12">
-            <i class="fas fa-circle-notch fa-spin text-3xl text-accent"></i>
-            <span class="text-gray-400 ml-3">Loading frame...</span>
-        </div>
-        <div id="webcam-canvas-wrap" class="hidden relative flex-1 overflow-auto flex items-center justify-center bg-dark-800 rounded-lg">
-            <canvas id="webcam-canvas" class="cursor-crosshair max-w-full"></canvas>
-        </div>
-        <div class="flex items-center justify-between mt-4">
-            <div id="webcam-coords" class="text-gray-500 text-xs font-mono"></div>
-            <div class="flex gap-3">
-                <button onclick="clearWebcamSelection()" class="px-4 py-2 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
-                    <i class="fas fa-eraser mr-1"></i> Clear
-                </button>
-                <button onclick="confirmWebcamSelection()" class="px-4 py-2 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg transition-colors">
-                    <i class="fas fa-check mr-1"></i> Confirm
-                </button>
-            </div>
+            <button onclick="confirmWebcamSelection()" class="px-6 py-2.5 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg transition-colors">
+                <i class="fas fa-check mr-1"></i> Confirm
+            </button>
         </div>
     </div>
 </div>
@@ -315,17 +322,19 @@
         const canvas = document.getElementById('webcam-canvas');
         const wrap = document.getElementById('webcam-canvas-wrap');
 
-        // Fit canvas to available space while maintaining aspect ratio
-        const maxW = wrap.clientWidth - 20;
-        const maxH = wrap.clientHeight - 20;
+        // Use ALL available space — minus small padding
+        const maxW = wrap.clientWidth - 16;
+        const maxH = wrap.clientHeight - 16;
         const aspect = frameNaturalW / frameNaturalH;
 
         let cw, ch;
         if (maxW / maxH > aspect) {
-            ch = Math.min(maxH, frameNaturalH);
+            // Height-limited
+            ch = maxH;
             cw = ch * aspect;
         } else {
-            cw = Math.min(maxW, frameNaturalW);
+            // Width-limited
+            cw = maxW;
             ch = cw / aspect;
         }
 
