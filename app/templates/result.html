@@ -45,8 +45,8 @@
         </div>
     </div>
 
-    <!-- Results Grid -->
-    <div id="results-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- Results — centered, cards sized to match 9:16 video -->
+    <div id="results-grid" class="flex flex-wrap justify-center gap-6">
         <!-- Dynamically populated via JS -->
     </div>
 
@@ -94,10 +94,10 @@
         if (document.querySelector('[data-filename="' + short.filename + '"]')) return;
 
         const card = document.createElement('div');
-        card.className = 'glass rounded-xl overflow-hidden';
+        card.className = 'glass rounded-xl overflow-hidden w-[280px] flex-shrink-0';
         card.dataset.filename = short.filename;
         card.innerHTML = `
-            <div class="aspect-[9/16] bg-dark-700 max-h-[500px]">
+            <div class="aspect-[9/16] bg-dark-700">
                 <video controls preload="metadata" class="w-full h-full object-contain">
                     <source src="/download/${sessionId}/${short.filename}" type="video/mp4">
                     Your browser does not support the video tag.
