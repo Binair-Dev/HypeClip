@@ -191,6 +191,7 @@ class ShortsService:
             "streamer_name": bool(options.get("streamer_name", False)),
             "name_position": options.get("name_position"),
         }
+        log.info("Generate options: streamer_name=%s, name_position=%s", opts["streamer_name"], opts["name_position"])
 
         # Initialise progress
         progress_data = {
@@ -377,7 +378,7 @@ class ShortsService:
         )
 
         self._update_clip_status(session_id, slug, "processing", 65)
-        log.info("FFmpeg command for %s: %s", slug, " ".join(cmd[:8]))
+        log.info("FFmpeg command for %s: %s", slug, " ".join(cmd))
 
         result = subprocess.run(
             cmd,
