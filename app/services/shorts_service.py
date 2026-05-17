@@ -79,11 +79,12 @@ def _build_ffmpeg_command(
         x, y, w, h = webcam_region
         filters.append(f"[0:v]crop={w}:{h}:{x}:{y}[webcam_raw]")
 
-        # Scale webcam — base 480h, adjusted by user size_pct
-        size_pct = 100
-        if webcam_position and webcam_position.get("size_pct"):
-            size_pct = int(webcam_position["size_pct"])
-        webcam_h = max(120, round(480 * size_pct / 100))
+        # Scale webcam — height_pct is % of final output height (1920)
+        height_pct = 15.0  # default ~15% of 1920 = 288px
+        if webcam_position and webcam_position.get("height_pct"):
+            height_pct = float(webcam_position["height_pct"])
+        # Output height H is 1920 — compute webcam pixel height directly
+        webcam_h = max(80, round(1920 * height_pct / 100))
         filters.append(f"[webcam_raw]scale=-2:{webcam_h}[webcam]")
 
         # Position: use user-provided or default center-top

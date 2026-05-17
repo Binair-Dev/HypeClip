@@ -221,7 +221,7 @@
     let posResizing = false;
     let posResizeHandle = null;
     let posDragOffset = { x: 0, y: 0 };
-    const POS_HANDLE_SIZE = 12;
+    const POS_HANDLE_SIZE = 0; // unused — no corner handles
 
     // Canvas drawing state
     let canvasRect = null;
@@ -828,10 +828,14 @@
             posOverlayH *= overlayScale;
         }
 
-        // Default position: center-top
+        // Restore saved position & size, or default center-top
         if (webcamPositions[index]) {
             posOverlayX = (webcamPositions[index].x_pct / 100) * cw;
             posOverlayY = (webcamPositions[index].y_pct / 100) * ch;
+            if (webcamPositions[index].height_pct !== undefined) {
+                posOverlayH = (webcamPositions[index].height_pct / 100) * ch;
+                posOverlayW = posOverlayH * (region.w / region.h); // maintain webcam aspect
+            }
         } else {
             posOverlayX = (cw - posOverlayW) / 2;
             posOverlayY = 10;
@@ -842,12 +846,20 @@
         canvas._region = region;
         canvas._overlayAspect = posOverlayW / posOverlayH;
 
-        // Store base size for reset
-        posBaseOverlayW = posOverlayW;
-        posBaseOverlayH = posOverlayH;
+        // Store base size for reset (before any saved position resize)
+        // We need the "initial" base for the slider to be meaningful
+        // Re-calculate base from the default size (before height_pct restore)
+        var initialH = region.h * scaleToCanvas;
+        if (initialH > maxOverlayH) initialH = maxOverlayH;
+        var initialW = initialH * (region.w / region.h);
+        posBaseOverlayW = initialW;
+        posBaseOverlayH = initialH;
 
-        // Update size slider
-        document.getElementById('pos-size-slider').value = 100;
+        // Update size slider to reflect current size relative to base
+        var slider = document.getElementById('pos-size-slider');
+        if (slider && posBaseOverlayW > 0) {
+            slider.value = Math.round((posOverlayW / posBaseOverlayW) * 100);
+        }
 
         drawPositionCanvas();
         setupPositionEvents();
@@ -890,19 +902,6 @@
         ctx.strokeStyle = '#00ff88';
         ctx.lineWidth = 2;
         ctx.strokeRect(drawX, drawY, drawW, drawH);
-
-        // Corner resize handles
-        ctx.fillStyle = '#00ff88';
-        const hs = POS_HANDLE_SIZE;
-        const corners = [
-            { x: drawX, y: drawY },
-            { x: drawX + drawW, y: drawY },
-            { x: drawX, y: drawY + drawH },
-            { x: drawX + drawW, y: drawY + drawH },
-        ];
-        corners.forEach(function(c) {
-            ctx.fillRect(c.x - hs / 2, c.y - hs / 2, hs, hs);
-        });
 
         // Update info
         const infoEl = document.getElementById('position-info');
@@ -964,14 +963,7 @@
 
     function onPosMouseDown(e) {
         const pos = getPosCanvasCoords(e);
-        // Check corner handles first
-        const handle = hitPosHandle(pos.x, pos.y);
-        if (handle) {
-            posResizing = true;
-            posResizeHandle = handle;
-            return;
-        }
-        // Check if clicking inside overlay → drag
+        // Only drag — no handle resize
         if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
             pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
             posDragging = true;
@@ -982,81 +974,22 @@
         }
     }
 
-    function hitPosHandle(mx, my) {
-        const hs = POS_HANDLE_SIZE * 2; // hit area
-        const corners = [
-            { x: posOverlayX, y: posOverlayY, id: 'tl' },
-            { x: posOverlayX + posOverlayW, y: posOverlayY, id: 'tr' },
-            { x: posOverlayX, y: posOverlayY + posOverlayH, id: 'bl' },
-            { x: posOverlayX + posOverlayW, y: posOverlayY + posOverlayH, id: 'br' },
-        ];
-        for (var i = 0; i < corners.length; i++) {
-            var c = corners[i];
-            if (Math.abs(mx - c.x) <= hs && Math.abs(my - c.y) <= hs) {
-                return c.id;
-            }
-        }
-        return null;
-    }
-
-    function resizePosOverlay(pos) {
-        const canvas = document.getElementById('position-canvas');
-        const aspect = canvas._overlayAspect;
-        const minSize = 40;
-        const cw = canvas.width;
-        const ch = canvas.height;
-
-        if (posResizeHandle === 'br') {
-            var newW = pos.x - posOverlayX;
-            newW = Math.max(minSize, Math.min(newW, cw - posOverlayX));
-            posOverlayW = newW;
-            posOverlayH = newW / aspect;
-        } else if (posResizeHandle === 'bl') {
-            var right = posOverlayX + posOverlayW;
-            var newW = right - pos.x;
-            newW = Math.max(minSize, Math.min(newW, right));
-            posOverlayX = right - newW;
-            posOverlayW = newW;
-            posOverlayH = newW / aspect;
-        } else if (posResizeHandle === 'tr') {
-            var bottom = posOverlayY + posOverlayH;
-            var newW = pos.x - posOverlayX;
-            newW = Math.max(minSize, Math.min(newW, cw - posOverlayX));
-            posOverlayW = newW;
-            var newH = newW / aspect;
-            if (newH > bottom) { newH = bottom; newW = newH * aspect; posOverlayW = newW; }
-            posOverlayY = bottom - newH;
-            posOverlayH = newH;
-        } else if (posResizeHandle === 'tl') {
-            var right = posOverlayX + posOverlayW;
-            var bottom = posOverlayY + posOverlayH;
-            var newW = right - pos.x;
-            newW = Math.max(minSize, Math.min(newW, right));
-            var newH = newW / aspect;
-            if (newH > bottom) { newH = bottom; newW = newH * aspect; }
-            posOverlayX = right - newW;
-            posOverlayW = newW;
-            posOverlayY = bottom - newH;
-            posOverlayH = newH;
-        }
-
-        // Clamp final position
-        clampOverlayToCanvas();
-
-        // Update slider to match
-        var slider = document.getElementById('pos-size-slider');
-        if (slider && posBaseOverlayW > 0) {
-            slider.value = Math.round((posOverlayW / posBaseOverlayW) * 100);
+    function onPosMouseDown(e) {
+        const pos = getPosCanvasCoords(e);
+        // Only drag — no handle resize
+        if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
+            pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
+            posDragging = true;
+            posDragOffset = {
+                x: pos.x - posOverlayX,
+                y: pos.y - posOverlayY
+            };
         }
     }
 
     function onPosMouseMove(e) {
         const canvas = document.getElementById('position-canvas');
-        if (posResizing) {
-            const pos = getPosCanvasCoords(e);
-            resizePosOverlay(pos);
-            drawPositionCanvas();
-        } else if (posDragging) {
+        if (posDragging) {
             const pos = getPosCanvasCoords(e);
             let nx = pos.x - posDragOffset.x;
             let ny = pos.y - posDragOffset.y;
@@ -1069,12 +1002,7 @@
         } else {
             // Update cursor based on hover
             const pos = getPosCanvasCoords(e);
-            const handle = hitPosHandle(pos.x, pos.y);
-            if (handle === 'tl' || handle === 'br') {
-                canvas.style.cursor = 'nwse-resize';
-            } else if (handle === 'tr' || handle === 'bl') {
-                canvas.style.cursor = 'nesw-resize';
-            } else if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
+            if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
                        pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
                 canvas.style.cursor = 'grab';
             } else {
@@ -1141,11 +1069,14 @@
     window.confirmPosition = function() {
         var canvas = document.getElementById('position-canvas');
         if (!canvas) return;
-        // Save as percentage of 9:16 canvas
+        var cw = canvas.width;
+        var ch = canvas.height;
+        // Save position as percentage of 9:16 canvas
+        // Save size as percentage of final output height (1920) — this maps directly to FFmpeg
         webcamPositions[currentEditIndex] = {
-            x_pct: parseFloat(((posOverlayX / canvas.width) * 100).toFixed(1)),
-            y_pct: parseFloat(((posOverlayY / canvas.height) * 100).toFixed(1)),
-            size_pct: Math.round((posOverlayW / posBaseOverlayW) * 100)
+            x_pct: parseFloat(((posOverlayX / cw) * 100).toFixed(1)),
+            y_pct: parseFloat(((posOverlayY / ch) * 100).toFixed(1)),
+            height_pct: parseFloat(((posOverlayH / ch) * 100).toFixed(2))
         };
         closePositionModal();
         renderClipList();
