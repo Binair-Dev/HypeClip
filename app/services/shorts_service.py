@@ -108,12 +108,13 @@ def _build_ffmpeg_command(
 
         # Determine fontsize and position
         if name_position:
-            # height_pct is % of output height (1920) → maps directly to fontsize
-            height_pct = float(name_position.get("height_pct", 3.0))
-            fontsize = max(20, round(1920 * height_pct / 100))
-            # drawtext uses w/h (lowercase) for video dimensions, NOT W/H
-            x_expr = f"({name_position['x_pct']}*w/100)"
-            y_expr = f"({name_position['y_pct']}*h/100)"
+            # fontsize_pct = fontsize as % of output height (1920) — directly from canvas fontsize
+            fontsize_pct = float(name_position.get("fontsize_pct", 3.0))
+            fontsize = max(20, round(1920 * fontsize_pct / 100))
+            # Position by text center (x_pct/y_pct = center of text)
+            # drawtext uses w/h (lowercase) for video dimensions
+            x_expr = f"({name_position['x_pct']}*w/100-text_w/2)"
+            y_expr = f"({name_position['y_pct']}*h/100-text_h/2)"
         else:
             fontsize = 60
             x_expr = "(w-text_w)/2"

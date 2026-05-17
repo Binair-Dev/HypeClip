@@ -1259,15 +1259,25 @@
 
         // Restore saved position & size, or default center-bottom
         if (namePosition) {
-            nameOverlayX = (namePosition.x_pct / 100) * cw;
-            nameOverlayY = (namePosition.y_pct / 100) * ch;
-            if (namePosition.height_pct !== undefined) {
+            if (namePosition.fontsize_pct !== undefined) {
+                // New format: center position + fontsize_pct
+                var scaleFromBase = (namePosition.fontsize_pct / 100 * ch) / fontSize;
+                nameOverlayH = nameBaseOverlayH * scaleFromBase;
+                nameOverlayW = nameBaseOverlayW * scaleFromBase;
+                // x_pct/y_pct is center of overlay
+                nameOverlayX = (namePosition.x_pct / 100) * cw - nameOverlayW / 2;
+                nameOverlayY = (namePosition.y_pct / 100) * ch - nameOverlayH / 2;
+            } else if (namePosition.height_pct !== undefined) {
+                // Legacy format: corner position + box height
                 nameOverlayH = (namePosition.height_pct / 100) * ch;
-                // Scale width proportionally
                 nameOverlayW = nameBaseOverlayW * (nameOverlayH / nameBaseOverlayH);
+                nameOverlayX = (namePosition.x_pct / 100) * cw;
+                nameOverlayY = (namePosition.y_pct / 100) * ch;
             } else {
                 nameOverlayW = nameBaseOverlayW;
                 nameOverlayH = nameBaseOverlayH;
+                nameOverlayX = (namePosition.x_pct / 100) * cw;
+                nameOverlayY = (namePosition.y_pct / 100) * ch;
             }
         } else {
             nameOverlayW = nameBaseOverlayW;
@@ -1493,10 +1503,13 @@
         if (!canvas) return;
         var cw = canvas.width;
         var ch = canvas.height;
+        // Save center position (not box corner) and fontsize as % of output height
+        var fontSize = canvas._fontSize || (ch * 0.05);
+        var textPadding = canvas._textPadding || (fontSize * 0.4);
         namePosition = {
-            x_pct: parseFloat(((nameOverlayX / cw) * 100).toFixed(1)),
-            y_pct: parseFloat(((nameOverlayY / ch) * 100).toFixed(1)),
-            height_pct: parseFloat(((nameOverlayH / ch) * 100).toFixed(2))
+            x_pct: parseFloat((((nameOverlayX + nameOverlayW / 2) / cw) * 100).toFixed(1)),
+            y_pct: parseFloat((((nameOverlayY + nameOverlayH / 2) / ch) * 100).toFixed(1)),
+            fontsize_pct: parseFloat(((fontSize * (nameOverlayH / nameBaseOverlayH)) / ch * 100).toFixed(2))
         };
         closeNameModal();
         // Show green check on button
