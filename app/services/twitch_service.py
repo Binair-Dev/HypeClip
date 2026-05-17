@@ -241,12 +241,13 @@ def get_clip_download_url(clip_slug: str) -> Optional[str]:
         return None
 
     # Append the signature + token for signed access
+    # token_val is already a JSON string — pass it raw, do NOT json.dumps again
     token_data = clip.get("playbackAccessToken") or {}
     sig = token_data.get("signature", "")
     token_val = token_data.get("value", "")
 
     if sig and token_val:
         device_id = str(uuid.uuid4())
-        source_url = f"{source_url}?sig={sig}&token={_json.dumps(token_val)}&device_id={device_id}"
+        source_url = f"{source_url}?sig={sig}&token={token_val}&device_id={device_id}"
 
     return source_url
