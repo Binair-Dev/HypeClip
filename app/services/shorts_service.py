@@ -56,12 +56,14 @@ def _build_ffmpeg_command(
     webcam_region: Optional[tuple] = None,
     webcam_position: Optional[dict] = None,
     streamer_name: Optional[str] = None,
+    name_position: Optional[dict] = None,
 ) -> list:
     """Build an FFmpeg command that produces a 1080×1920 short.
 
     * Always crops / scales to 9:16 (1080×1920).
     * If *webcam_region* is provided the webcam strip is overlaid.
     * If *streamer_name* is provided a drawtext filter is appended.
+    * If *name_position* is provided the text overlay is positioned accordingly.
     * Uses CPU encoding (libx264).
     """
     cmd = ["ffmpeg", "-y", "-i", input_path]
@@ -103,16 +105,29 @@ def _build_ffmpeg_command(
         font = _font_path()
         # Escape single quotes in the name
         safe_name = streamer_name.upper().replace("'", "'\\''")
+
+        # Determine fontsize and position
+        if name_position:
+            # height_pct is % of output height (1920) → maps directly to fontsize
+            height_pct = float(name_position.get("height_pct", 3.0))
+            fontsize = max(20, round(1920 * height_pct / 100))
+            x_expr = f"({name_position['x_pct']}*W/100)"
+            y_expr = f"({name_position['y_pct']}*H/100)"
+        else:
+            fontsize = 60
+            x_expr = "(w-text_w)/2"
+            y_expr = "h-100"
+
         text_filter = (
             f"[{video_label}]drawtext="
             f"text='{safe_name}':"
             f"fontfile={font}:"
-            f"fontsize=60:"
+            f"fontsize={fontsize}:"
             f"fontcolor=white:"
             f"borderw=3:"
             f"bordercolor=black:"
-            f"x=(w-text_w)/2:"
-            f"y=h-100"
+            f"x={x_expr}:"
+            f"y={y_expr}"
             f"[final]"
         )
         filters.append(text_filter)
@@ -173,6 +188,7 @@ class ShortsService:
         opts = {
             "webcam": bool(options.get("webcam", False)),
             "streamer_name": bool(options.get("streamer_name", False)),
+            "name_position": options.get("name_position"),
         }
 
         # Initialise progress
@@ -356,6 +372,7 @@ class ShortsService:
             webcam_region=webcam_region,
             webcam_position=webcam_position,
             streamer_name=streamer_name,
+            name_position=options.get("name_position"),
         )
 
         self._update_clip_status(session_id, slug, "processing", 65)
