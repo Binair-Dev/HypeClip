@@ -767,6 +767,14 @@
         const modal = document.getElementById('position-modal');
         modal.classList.remove('hidden');
 
+        // Wait for layout to be calculated before measuring
+        requestAnimationFrame(function() {
+            setupPositionCanvas(index);
+        });
+    }
+
+    function setupPositionCanvas(index) {
+
         // Setup the position canvas
         const canvas = document.getElementById('position-canvas');
         const wrap = document.getElementById('position-canvas-wrap');
@@ -847,41 +855,50 @@
 
     function drawPositionCanvas() {
         const canvas = document.getElementById('position-canvas');
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
         const cw = canvas.width;
         const ch = canvas.height;
+
+        if (cw === 0 || ch === 0) return;
         const crop = canvas._cropSrc;
+        if (!crop) return;
 
         ctx.clearRect(0, 0, cw, ch);
 
         // Draw 9:16 background (center-cropped from frame)
         ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
 
-        // Draw webcam overlay
+        // Draw webcam overlay — ensure positive dimensions
         const region = canvas._region;
+        if (!region) return;
+        const drawX = Math.round(posOverlayX);
+        const drawY = Math.round(posOverlayY);
+        const drawW = Math.max(10, Math.round(posOverlayW));
+        const drawH = Math.max(10, Math.round(posOverlayH));
+
         ctx.save();
-        // Slight shadow for depth
         ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
         ctx.shadowBlur = 12;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 4;
         ctx.drawImage(frameImage, region.x, region.y, region.w, region.h,
-                       posOverlayX, posOverlayY, posOverlayW, posOverlayH);
+                       drawX, drawY, drawW, drawH);
         ctx.restore();
 
         // Border around webcam
         ctx.strokeStyle = '#00ff88';
         ctx.lineWidth = 2;
-        ctx.strokeRect(posOverlayX, posOverlayY, posOverlayW, posOverlayH);
+        ctx.strokeRect(drawX, drawY, drawW, drawH);
 
         // Corner resize handles
         ctx.fillStyle = '#00ff88';
         const hs = POS_HANDLE_SIZE;
         const corners = [
-            { x: posOverlayX, y: posOverlayY },
-            { x: posOverlayX + posOverlayW, y: posOverlayY },
-            { x: posOverlayX, y: posOverlayY + posOverlayH },
-            { x: posOverlayX + posOverlayW, y: posOverlayY + posOverlayH },
+            { x: drawX, y: drawY },
+            { x: drawX + drawW, y: drawY },
+            { x: drawX, y: drawY + drawH },
+            { x: drawX + drawW, y: drawY + drawH },
         ];
         corners.forEach(function(c) {
             ctx.fillRect(c.x - hs / 2, c.y - hs / 2, hs, hs);
@@ -889,10 +906,12 @@
 
         // Update info
         const infoEl = document.getElementById('position-info');
-        const xPct = ((posOverlayX / cw) * 100).toFixed(1);
-        const yPct = ((posOverlayY / ch) * 100).toFixed(1);
-        const scalePct = Math.round((posOverlayW / posBaseOverlayW) * 100);
-        infoEl.textContent = 'x=' + xPct + '%  y=' + yPct + '%  size=' + scalePct + '%';
+        if (posBaseOverlayW > 0) {
+            const xPct = ((posOverlayX / cw) * 100).toFixed(1);
+            const yPct = ((posOverlayY / ch) * 100).toFixed(1);
+            const scalePct = Math.round((posOverlayW / posBaseOverlayW) * 100);
+            infoEl.textContent = 'x=' + xPct + '%  y=' + yPct + '%  size=' + scalePct + '%';
+        }
     }
 
     function setupPositionEvents() {
@@ -1104,14 +1123,19 @@
         if (!canvas) return;
         var cw = canvas.width;
         var ch = canvas.height;
-        // Don't let it go completely off-screen — at least 40px visible
-        var minVis = 40;
-        if (posOverlayW > cw) posOverlayW = cw;
-        if (posOverlayH > ch) posOverlayH = ch;
-        if (posOverlayX + posOverlayW < minVis) posOverlayX = minVis - posOverlayW;
-        if (posOverlayY + posOverlayH < minVis) posOverlayY = minVis - posOverlayH;
-        if (posOverlayX > cw - minVis) posOverlayX = cw - minVis;
-        if (posOverlayY > ch - minVis) posOverlayY = ch - minVis;
+        var aspect = canvas._overlayAspect || 1;
+        // Don't let overlay exceed canvas dimensions
+        if (posOverlayW > cw) {
+            posOverlayW = cw;
+            posOverlayH = posOverlayW / aspect;
+        }
+        if (posOverlayH > ch) {
+            posOverlayH = ch;
+            posOverlayW = posOverlayH * aspect;
+        }
+        // Clamp position — keep overlay fully on canvas
+        posOverlayX = Math.max(0, Math.min(posOverlayX, cw - posOverlayW));
+        posOverlayY = Math.max(0, Math.min(posOverlayY, ch - posOverlayH));
     }
 
     window.confirmPosition = function() {
