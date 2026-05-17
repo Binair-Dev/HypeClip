@@ -54,6 +54,7 @@ def _build_ffmpeg_command(
     input_path: str,
     output_path: str,
     webcam_region: Optional[tuple] = None,
+    webcam_position: Optional[dict] = None,
     streamer_name: Optional[str] = None,
 ) -> list:
     """Build an FFmpeg command that produces a 1080×1920 short.
@@ -78,7 +79,16 @@ def _build_ffmpeg_command(
         x, y, w, h = webcam_region
         filters.append(f"[0:v]crop={w}:{h}:{x}:{y}[webcam_raw]")
         filters.append("[webcam_raw]scale=-2:480[webcam]")
-        filters.append("[main][webcam]overlay=(W-w)/2:0[video_with_webcam]")
+
+        # Position: use user-provided or default center-top
+        if webcam_position:
+            overlay_x = f"({webcam_position['x_pct']}*W/100)"
+            overlay_y = f"({webcam_position['y_pct']}*H/100)"
+        else:
+            overlay_x = "(W-w)/2"
+            overlay_y = "0"
+
+        filters.append(f"[main][webcam]overlay={overlay_x}:{overlay_y}[video_with_webcam]")
         video_label = "video_with_webcam"
 
     # 3. Streamer name text overlay
@@ -306,6 +316,7 @@ class ShortsService:
 
         # --- 3. Webcam detection (optional) --------------------------------
         webcam_region = None
+        webcam_position = None
         if options.get("webcam"):
             self._update_clip_status(session_id, slug, "processing", 40)
             # If user provided a webcam_region in the clip data, use it directly
@@ -323,6 +334,9 @@ class ShortsService:
             else:
                 webcam_region = detect_webcam_region_only(str(clip_path), user_id=session_id)
 
+            # Extract user-provided webcam position (percentage-based)
+            webcam_position = clip.get("webcam_position")
+
         # --- 4. Build and run FFmpeg ---------------------------------------
         self._update_clip_status(session_id, slug, "processing", 55)
 
@@ -333,6 +347,7 @@ class ShortsService:
             input_path=str(clip_path),
             output_path=str(output_path),
             webcam_region=webcam_region,
+            webcam_position=webcam_position,
             streamer_name=streamer_name,
         )
 

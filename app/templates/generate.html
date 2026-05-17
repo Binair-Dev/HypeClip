@@ -141,6 +141,42 @@
     </div>
 </div>
 
+<!-- Webcam position modal — fullscreen 9:16 preview -->
+<div id="position-modal" class="hidden fixed inset-0 z-[60] bg-black flex flex-col">
+    <!-- Top bar -->
+    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-b border-white/5 flex-shrink-0">
+        <div class="flex items-center gap-4">
+            <h3 class="text-white text-base font-semibold">
+                <i class="fas fa-arrows-up-down-left-right text-accent mr-2"></i>Position Webcam on Short
+            </h3>
+            <p class="text-gray-500 text-xs hidden sm:block">Drag the webcam where you want it on the final Short</p>
+        </div>
+        <button onclick="closePositionModal()" class="text-gray-400 hover:text-white transition-colors ml-4">
+            <i class="fas fa-xmark text-xl"></i>
+        </button>
+    </div>
+
+    <!-- Canvas area -->
+    <div class="flex-1 flex items-center justify-center overflow-hidden relative bg-dark-950">
+        <div id="position-canvas-wrap" class="w-full h-full flex items-center justify-center">
+            <canvas id="position-canvas" class="cursor-default"></canvas>
+        </div>
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
+        <div id="position-info" class="text-gray-500 text-xs font-mono"></div>
+        <div class="flex gap-3">
+            <button onclick="resetPosition()" class="px-5 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
+                <i class="fas fa-rotate-left mr-1"></i> Reset
+            </button>
+            <button onclick="confirmPosition()" class="px-6 py-2.5 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg transition-colors">
+                <i class="fas fa-check mr-1"></i> Confirm Position
+            </button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -159,10 +195,19 @@
 
     // Webcam selection state (keyed by clip index)
     let webcamRegions = {};   // { index: { x, y, w, h } } in pixel coords of original frame
+    let webcamPositions = {}; // { index: { x_pct, y_pct } } percentage of 9:16 canvas
     let currentEditIndex = null;
     let frameImage = null;    // HTMLImageElement of the loaded frame
     let frameNaturalW = 0;
     let frameNaturalH = 0;
+
+    // Position modal state
+    let posOverlayX = 0;  // webcam overlay x in position-canvas coords
+    let posOverlayY = 0;  // webcam overlay y in position-canvas coords
+    let posOverlayW = 0;  // webcam overlay width
+    let posOverlayH = 0;  // webcam overlay height
+    let posDragging = false;
+    let posDragOffset = { x: 0, y: 0 };
 
     // Canvas drawing state
     let canvasRect = null;
@@ -207,6 +252,7 @@
             const mm = String(Math.floor(duration / 60)).padStart(2, '0');
             const ss = String(duration % 60).padStart(2, '0');
             const hasRegion = webcamRegions[i] !== undefined;
+            const hasPosition = webcamPositions[i] !== undefined;
 
             const item = document.createElement('div');
             item.className = 'flex items-center gap-4 p-3 rounded-lg bg-dark-700/50 hover:bg-dark-600/50 transition-colors';
@@ -214,10 +260,20 @@
 
             let webcamBtnHtml = '';
             if (webcamOn) {
-                const btnClass = hasRegion ? 'bg-green-600/30 text-green-400 border-green-500/40' : 'bg-dark-600 text-gray-300 border-transparent';
+                let btnLabel, btnClass;
+                if (hasPosition) {
+                    btnLabel = '✓ Positioned';
+                    btnClass = 'bg-green-600/30 text-green-400 border-green-500/40';
+                } else if (hasRegion) {
+                    btnLabel = 'Position Webcam';
+                    btnClass = 'bg-yellow-600/30 text-yellow-400 border-yellow-500/40';
+                } else {
+                    btnLabel = 'Select Webcam';
+                    btnClass = 'bg-dark-600 text-gray-300 border-transparent';
+                }
                 webcamBtnHtml = `
-                    <button onclick="openWebcamSelector(${i})" class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 ${btnClass}" title="Select webcam area">
-                        <i class="fas fa-crop-simple mr-1"></i>${hasRegion ? 'Edit Area' : 'Select Webcam'}
+                    <button onclick="openWebcamSelector(${i})" class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 ${btnClass}" title="Setup webcam">
+                        <i class="fas fa-crop-simple mr-1"></i>${btnLabel}
                     </button>`;
             }
 
@@ -256,6 +312,14 @@
             else if (ki > index) newRegions[ki - 1] = webcamRegions[ki];
         });
         webcamRegions = newRegions;
+        // Re-index webcam positions
+        const newPositions = {};
+        Object.keys(webcamPositions).forEach(function(k) {
+            const ki = parseInt(k);
+            if (ki < index) newPositions[ki] = webcamPositions[ki];
+            else if (ki > index) newPositions[ki - 1] = webcamPositions[ki];
+        });
+        webcamPositions = newPositions;
 
         sessionStorage.setItem('selected_clips', JSON.stringify(clips));
         renderClipList();
@@ -305,6 +369,14 @@
             frameImage = img;
             frameNaturalW = img.naturalWidth;
             frameNaturalH = img.naturalHeight;
+
+            // If region already exists, skip straight to position modal
+            if (webcamRegions[index]) {
+                loading.classList.add('hidden');
+                modal.classList.add('hidden');
+                openPositionModal(index);
+                return;
+            }
 
             loading.classList.add('hidden');
             canvasWrap.classList.remove('hidden');
@@ -653,8 +725,10 @@
             w: Math.round(selRect.w * scaleX),
             h: Math.round(selRect.h * scaleY)
         };
+        // Close webcam modal and open position modal
+        const savedIndex = currentEditIndex;
         closeWebcamModal();
-        renderClipList();
+        openPositionModal(savedIndex);
     };
 
     window.closeWebcamModal = function() {
@@ -665,10 +739,248 @@
         currentEditIndex = null;
     };
 
-    // Close modal on Escape
+    // Close modals on Escape
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') closeWebcamModal();
+        if (e.key === 'Escape') {
+            closePositionModal();
+            closeWebcamModal();
+        }
     });
+
+    // ---- Position modal ----
+    function openPositionModal(index) {
+        currentEditIndex = index;
+        const modal = document.getElementById('position-modal');
+        modal.classList.remove('hidden');
+
+        // Setup the position canvas
+        const canvas = document.getElementById('position-canvas');
+        const wrap = document.getElementById('position-canvas-wrap');
+
+        // 9:16 aspect ratio, fill available space
+        const maxW = wrap.clientWidth - 32;
+        const maxH = wrap.clientHeight - 32;
+        const aspect916 = 9 / 16;
+
+        let cw, ch;
+        if (maxW / maxH > aspect916) {
+            ch = maxH;
+            cw = ch * aspect916;
+        } else {
+            cw = maxW;
+            ch = cw / aspect916;
+        }
+        canvas.width = Math.round(cw);
+        canvas.height = Math.round(ch);
+
+        // Calculate the 9:16 center crop from the original frame
+        const region = webcamRegions[index];
+        const srcAspect = frameNaturalW / frameNaturalH;
+        let cropSrcX, cropSrcY, cropSrcW, cropSrcH;
+
+        if (srcAspect > aspect916) {
+            // Frame is wider than 9:16 → crop sides
+            cropSrcH = frameNaturalH;
+            cropSrcW = frameNaturalH * aspect916;
+            cropSrcX = (frameNaturalW - cropSrcW) / 2;
+            cropSrcY = 0;
+        } else {
+            // Frame is taller → crop top/bottom
+            cropSrcW = frameNaturalW;
+            cropSrcH = frameNaturalW / aspect916;
+            cropSrcX = 0;
+            cropSrcY = (frameNaturalH - cropSrcH) / 2;
+        }
+
+        // Webcam overlay: scale the region to canvas coords
+        // First compute how big the webcam crop would be on the 9:16 canvas
+        const scaleToCanvas = cw / cropSrcW;
+        posOverlayW = region.w * scaleToCanvas;
+        posOverlayH = region.h * scaleToCanvas;
+
+        // Scale webcam to max 25% of canvas height
+        const maxOverlayH = ch * 0.25;
+        if (posOverlayH > maxOverlayH) {
+            const overlayScale = maxOverlayH / posOverlayH;
+            posOverlayW *= overlayScale;
+            posOverlayH *= overlayScale;
+        }
+
+        // Default position: center-top
+        if (webcamPositions[index]) {
+            posOverlayX = (webcamPositions[index].x_pct / 100) * cw;
+            posOverlayY = (webcamPositions[index].y_pct / 100) * ch;
+        } else {
+            posOverlayX = (cw - posOverlayW) / 2;
+            posOverlayY = 10;
+        }
+
+        // Store crop params for drawing
+        canvas._cropSrc = { x: cropSrcX, y: cropSrcY, w: cropSrcW, h: cropSrcH };
+        canvas._region = region;
+
+        drawPositionCanvas();
+        setupPositionEvents();
+    }
+
+    function drawPositionCanvas() {
+        const canvas = document.getElementById('position-canvas');
+        const ctx = canvas.getContext('2d');
+        const cw = canvas.width;
+        const ch = canvas.height;
+        const crop = canvas._cropSrc;
+
+        ctx.clearRect(0, 0, cw, ch);
+
+        // Draw 9:16 background (center-cropped from frame)
+        ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
+
+        // Draw webcam overlay
+        const region = canvas._region;
+        ctx.save();
+        // Slight shadow for depth
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 4;
+        ctx.drawImage(frameImage, region.x, region.y, region.w, region.h,
+                       posOverlayX, posOverlayY, posOverlayW, posOverlayH);
+        ctx.restore();
+
+        // Border around webcam
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(posOverlayX, posOverlayY, posOverlayW, posOverlayH);
+
+        // Update info
+        const infoEl = document.getElementById('position-info');
+        const xPct = ((posOverlayX / cw) * 100).toFixed(1);
+        const yPct = ((posOverlayY / ch) * 100).toFixed(1);
+        infoEl.textContent = 'Position: x=' + xPct + '%  y=' + yPct + '%';
+    }
+
+    function setupPositionEvents() {
+        const canvas = document.getElementById('position-canvas');
+
+        // Remove old listeners by replacing element
+        const newCanvas = canvas.cloneNode(false);
+        canvas.parentNode.replaceChild(newCanvas, canvas);
+        newCanvas.id = 'position-canvas';
+        newCanvas.width = canvas.width;
+        newCanvas.height = canvas.height;
+
+        // Copy stored data
+        newCanvas._cropSrc = canvas._cropSrc;
+        newCanvas._region = canvas._region;
+
+        // Redraw
+        drawPositionCanvas();
+
+        newCanvas.addEventListener('mousedown', onPosMouseDown);
+        newCanvas.addEventListener('mousemove', onPosMouseMove);
+        newCanvas.addEventListener('mouseup', onPosMouseUp);
+        document.addEventListener('mouseup', onPosMouseUp);
+
+        // Touch support
+        newCanvas.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            var touch = e.touches[0];
+            onPosMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
+        }, { passive: false });
+        newCanvas.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+            var touch = e.touches[0];
+            onPosMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+        }, { passive: false });
+        newCanvas.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            onPosMouseUp();
+        });
+    }
+
+    function getPosCanvasCoords(e) {
+        const canvas = document.getElementById('position-canvas');
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left) * (canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (canvas.height / rect.height)
+        };
+    }
+
+    function onPosMouseDown(e) {
+        const pos = getPosCanvasCoords(e);
+        // Check if clicking inside overlay
+        if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
+            pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
+            posDragging = true;
+            posDragOffset = {
+                x: pos.x - posOverlayX,
+                y: pos.y - posOverlayY
+            };
+        }
+    }
+
+    function onPosMouseMove(e) {
+        const canvas = document.getElementById('position-canvas');
+        if (posDragging) {
+            const pos = getPosCanvasCoords(e);
+            let nx = pos.x - posDragOffset.x;
+            let ny = pos.y - posDragOffset.y;
+            // Clamp within canvas
+            nx = Math.max(0, Math.min(nx, canvas.width - posOverlayW));
+            ny = Math.max(0, Math.min(ny, canvas.height - posOverlayH));
+            posOverlayX = nx;
+            posOverlayY = ny;
+            drawPositionCanvas();
+        } else {
+            // Update cursor
+            const pos = getPosCanvasCoords(e);
+            if (pos.x >= posOverlayX && pos.x <= posOverlayX + posOverlayW &&
+                pos.y >= posOverlayY && pos.y <= posOverlayY + posOverlayH) {
+                canvas.style.cursor = 'grab';
+            } else {
+                canvas.style.cursor = 'default';
+            }
+        }
+    }
+
+    function onPosMouseUp() {
+        if (posDragging) {
+            posDragging = false;
+            var canvas = document.getElementById('position-canvas');
+            if (canvas) canvas.style.cursor = 'default';
+        }
+    }
+
+    window.resetPosition = function() {
+        var canvas = document.getElementById('position-canvas');
+        if (!canvas) return;
+        posOverlayX = (canvas.width - posOverlayW) / 2;
+        posOverlayY = 10;
+        drawPositionCanvas();
+    };
+
+    window.confirmPosition = function() {
+        var canvas = document.getElementById('position-canvas');
+        if (!canvas) return;
+        // Save as percentage of 9:16 canvas
+        webcamPositions[currentEditIndex] = {
+            x_pct: parseFloat(((posOverlayX / canvas.width) * 100).toFixed(1)),
+            y_pct: parseFloat(((posOverlayY / canvas.height) * 100).toFixed(1))
+        };
+        closePositionModal();
+        renderClipList();
+    };
+
+    window.closePositionModal = function() {
+        document.getElementById('position-modal').classList.add('hidden');
+        posDragging = false;
+        currentEditIndex = null;
+    };
+
+    // Also open position modal directly if user has region but no position
+    // (when clicking "Position Webcam" button — we reuse openWebcamSelector
+    // which loads the frame, then skip to position if region exists)
 
     // Start generation
     window.startGeneration = async function() {
@@ -682,7 +994,7 @@
         const webcam = document.getElementById('opt-webcam').checked;
         const showName = document.getElementById('opt-name').checked;
 
-        // Build clips payload with webcam regions
+        // Build clips payload with webcam regions + positions
         const clipsPayload = clips.map(function(clip, i) {
             var payload = {
                 slug: clip.slug,
@@ -692,6 +1004,9 @@
             };
             if (webcam && webcamRegions[i]) {
                 payload.webcam_region = webcamRegions[i];
+                if (webcamPositions[i]) {
+                    payload.webcam_position = webcamPositions[i];
+                }
             }
             return payload;
         });
