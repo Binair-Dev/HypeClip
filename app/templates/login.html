@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HypeClip — Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            900: '#0f0f0f',
+                            800: '#161616',
+                            700: '#1e1e1e',
+                            600: '#2a2a2a',
+                            500: '#3a3a3a',
+                        },
+                        accent: {
+                            DEFAULT: '#9147FF',
+                            light: '#BF94FF',
+                            dark: '#772CE8',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #0f0f0f; }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glow-accent { box-shadow: 0 0 20px rgba(145, 71, 255, 0.3); }
+    </style>
+</head>
+<body class="bg-dark-900 text-gray-100 min-h-screen flex items-center justify-center">
+
+    <div class="w-full max-w-sm px-4">
+        <!-- Logo -->
+        <div class="flex flex-col items-center mb-8">
+            <div class="w-14 h-14 rounded-2xl bg-accent flex items-center justify-center mb-4 glow-accent">
+                <svg class="w-7 h-7 text-white fill-current" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                </svg>
+            </div>
+            <h1 class="text-3xl font-bold">
+                <span class="text-white">Hype</span><span class="text-accent-light">Clip</span>
+            </h1>
+            <p class="text-gray-500 text-sm mt-1">Accès privé</p>
+        </div>
+
+        <!-- Card -->
+        <div class="glass rounded-2xl p-6">
+            <form method="POST" action="/login" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-300 mb-1.5">Mot de passe</label>
+                    <input
+                        type="password"
+                        name="password"
+                        autofocus
+                        autocomplete="current-password"
+                        placeholder="••••••••"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600
+                               focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors"
+                    />
+                </div>
+
+                {% if error %}
+                <p class="text-red-400 text-sm flex items-center gap-1.5">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                    </svg>
+                    Mot de passe incorrect
+                </p>
+                {% endif %}
+
+                <button
+                    type="submit"
+                    class="w-full py-3 bg-accent hover:bg-accent-dark text-white font-semibold rounded-xl transition-colors glow-accent"
+                >
+                    Accéder
+                </button>
+            </form>
+        </div>
+
+        <p class="text-center text-gray-600 text-xs mt-6">HypeClip · Accès restreint</p>
+    </div>
+
+</body>
+</html>
