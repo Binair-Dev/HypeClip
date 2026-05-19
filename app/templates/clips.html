@@ -1,42 +1,59 @@
 {% extends "base.html" %}
 
-{% block title %}{{ streamer_login }} — Trending Clips{% endblock %}
+{% block title %}{{ streamer_login }} — Clips{% endblock %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28">
 
     <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
             <a href="/" class="text-sm text-gray-500 hover:text-accent transition-colors mb-2 inline-block">
                 <i class="fas fa-arrow-left mr-1"></i> Back to search
             </a>
             <h1 class="text-3xl sm:text-4xl font-bold">
                 <span class="text-white">{{ streamer_login }}</span>
-                <span class="text-accent-light text-2xl sm:text-3xl ml-2">Trending Clips (24h)</span>
+                <span class="text-accent-light text-2xl sm:text-3xl ml-2">Clips</span>
             </h1>
-            <p class="text-gray-500 mt-1">
-                <i class="fas fa-film mr-1"></i>
-                {{ clips|length }} clip{{ 's' if clips|length != 1 else '' }} found
-            </p>
         </div>
     </div>
 
-    {% if not clips %}
+    <!-- Category Tabs -->
+    <div class="flex gap-2 mb-6 border-b border-white/10 pb-0">
+        {% for cat_key, cat_info in categories.items() %}
+        <button
+            onclick="switchTab('{{ cat_key }}')"
+            id="tab-{{ cat_key }}"
+            class="tab-btn flex items-center gap-2 px-5 py-3 text-sm font-medium rounded-t-xl transition-all
+                   {% if cat_key == active_category %}
+                       bg-dark-700 text-accent-light border border-white/10 border-b-dark-700 -mb-px
+                   {% else %}
+                       text-gray-400 hover:text-white hover:bg-white/5
+                   {% endif %}"
+        >
+            <i class="fas {{ cat_info.icon }}"></i>
+            {{ cat_info.label }}
+        </button>
+        {% endfor %}
+    </div>
+
+    <!-- Loading spinner -->
+    <div id="loading-spinner" class="hidden flex items-center justify-center py-16">
+        <i class="fas fa-circle-notch fa-spin text-accent text-3xl"></i>
+    </div>
+
     <!-- Empty state -->
-    <div class="glass rounded-2xl p-12 text-center">
+    <div id="empty-state" class="hidden glass rounded-2xl p-12 text-center">
         <i class="fas fa-face-sad-tear text-4xl text-gray-600 mb-4"></i>
         <h2 class="text-xl font-semibold text-gray-300 mb-2">No clips found</h2>
-        <p class="text-gray-500">This streamer has no trending clips in the last 24 hours.</p>
+        <p id="empty-msg" class="text-gray-500">This streamer has no clips in this category.</p>
         <a href="/" class="inline-block mt-6 px-5 py-2.5 bg-dark-600 hover:bg-dark-500 rounded-xl text-white text-sm transition-colors">
             <i class="fas fa-magnifying-glass mr-1"></i> Try another streamer
         </a>
     </div>
-    {% else %}
 
     <!-- Clip Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" id="clips-grid">
-
         {% for clip in clips %}
         <div class="clip-card glass rounded-xl overflow-hidden group" data-slug="{{ clip.slug }}" data-title="{{ clip.title }}" data-duration="{{ clip.duration }}" data-thumbnail="{{ clip.thumbnail_url }}">
 
@@ -108,9 +125,7 @@
             </div>
         </div>
         {% endfor %}
-
     </div>
-    {% endif %}
 </div>
 
 <!-- Sticky Selection Bar -->
@@ -155,9 +170,127 @@
 {% block extra_js %}
 <script>
 (function() {
-    // --- Selection State ---
+    const STREAMER = '{{ streamer_login }}';
+    let activeCategory = '{{ active_category }}';
     const selectedClips = [];
+    const loadedCategories = {};  // cache: category -> clips array
+    loadedCategories[activeCategory] = true; // server-rendered
 
+    // --- Tab Switching ---
+    window.switchTab = async function(category) {
+        if (category === activeCategory) return;
+
+        // Update tab styles
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.className = btn.className
+                .replace('bg-dark-700 text-accent-light border border-white/10 border-b-dark-700 -mb-px', '')
+                .trim();
+            if (!btn.className.includes('text-gray-400')) {
+                btn.className += ' text-gray-400 hover:text-white hover:bg-white/5';
+            }
+        });
+        const activeTab = document.getElementById('tab-' + category);
+        activeTab.className = activeTab.className
+            .replace('text-gray-400 hover:text-white hover:bg-white/5', '')
+            .trim();
+        activeTab.classList.add('bg-dark-700', 'text-accent-light', 'border', 'border-white/10', 'border-b-dark-700', '-mb-px');
+
+        activeCategory = category;
+        const grid = document.getElementById('clips-grid');
+        const spinner = document.getElementById('loading-spinner');
+        const empty = document.getElementById('empty-state');
+
+        // Show spinner, hide grid
+        grid.innerHTML = '';
+        grid.classList.add('hidden');
+        empty.classList.add('hidden');
+        spinner.classList.remove('hidden');
+
+        // Fetch if not cached
+        if (!loadedCategories[category]) {
+            try {
+                const resp = await fetch('/api/clips/' + encodeURIComponent(STREAMER) + '/' + category);
+                const clips = await resp.json();
+                loadedCategories[category] = clips;
+            } catch (err) {
+                console.error('Failed to load category:', category, err);
+                loadedCategories[category] = [];
+            }
+        }
+
+        spinner.classList.add('hidden');
+
+        const clips = loadedCategories[category];
+        if (!clips || clips.length === 0) {
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        // Render clip cards
+        grid.innerHTML = clips.map(clip => renderClipCard(clip)).join('');
+        grid.classList.remove('hidden');
+
+        // Re-apply selection state
+        selectedClips.forEach(sc => {
+            const card = grid.querySelector(`[data-slug="${sc.slug}"]`);
+            if (card) {
+                const btn = card.querySelector('.select-btn');
+                if (btn) {
+                    btn.querySelector('i').className = 'fas fa-square-check text-accent-light';
+                    btn.querySelector('span').textContent = 'Selected';
+                    btn.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
+                    btn.classList.remove('border-white/10');
+                }
+            }
+        });
+    };
+
+    function renderClipCard(clip) {
+        const mins = String(Math.floor(clip.duration / 60)).padStart(2, '0');
+        const secs = String(clip.duration % 60).padStart(2, '0');
+        const views = clip.view_count.toLocaleString();
+        const gameHtml = clip.game
+            ? `<span class="truncate"><i class="fas fa-gamepad mr-1"></i>${escHtml(clip.game)}</span>`
+            : '';
+
+        return `
+        <div class="clip-card glass rounded-xl overflow-hidden group" data-slug="${escAttr(clip.slug)}" data-title="${escAttr(clip.title)}" data-duration="${clip.duration}" data-thumbnail="${escAttr(clip.thumbnail_url)}">
+            <div class="relative aspect-video bg-dark-700 overflow-hidden cursor-pointer" onclick="openPlayer('${escAttr(clip.slug)}')">
+                <img src="${escAttr(clip.thumbnail_url)}" alt="${escAttr(clip.title)}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy"
+                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 320 180%22><rect fill=%22%231e1e1e%22 width=%22320%22 height=%22180%22/><text fill=%22%23333%22 x=%22160%22 y=%2295%22 text-anchor=%22middle%22 font-size=%2214%22>No thumbnail</text></svg>'" />
+                <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                    <div class="w-14 h-14 rounded-full bg-accent/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity transform scale-75 group-hover:scale-100">
+                        <i class="fas fa-play text-white text-lg ml-1"></i>
+                    </div>
+                </div>
+                <div class="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-medium px-1.5 py-0.5 rounded">${mins}:${secs}</div>
+            </div>
+            <div class="p-4">
+                <h3 class="text-white font-semibold text-sm leading-snug mb-2 line-clamp-2 min-h-[2.5rem]">${escHtml(clip.title)}</h3>
+                <div class="flex items-center gap-3 text-xs text-gray-500 mb-4">
+                    <span><i class="fas fa-eye mr-1"></i>${views}</span>
+                    ${gameHtml}
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleSelect(this, '${escAttr(clip.slug)}', '${escAttr(clip.title)}', '${clip.duration}', '${escAttr(clip.thumbnail_url)}')"
+                            class="select-btn flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/10 text-sm font-medium transition-all hover:border-accent/50 hover:bg-accent/10">
+                        <i class="far fa-square text-gray-400"></i>
+                        <span class="text-gray-300">Select</span>
+                    </button>
+                    <a href="${escAttr(clip.clip_url)}" target="_blank" rel="noopener"
+                       class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-dark-600 hover:bg-dark-500 text-sm transition-colors" title="Watch on Twitch">
+                        <i class="fab fa-twitch text-[#9147FF]"></i>
+                        <span class="hidden sm:inline text-gray-300">Twitch</span>
+                    </a>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function escAttr(s) { return s.replace(/'/g, "&#39;").replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // --- Selection State ---
     function updateBar() {
         const bar = document.getElementById('selection-bar');
         const countEl = document.getElementById('selection-count');
@@ -176,22 +309,19 @@
         }
     }
 
-    // Toggle selection on a clip card
     window.toggleSelect = function(btnEl, slug, title, duration, thumbnail) {
         const idx = selectedClips.findIndex(c => c.slug === slug);
         const icon = btnEl.querySelector('i');
         const text = btnEl.querySelector('span');
 
         if (idx >= 0) {
-            // Deselect
             selectedClips.splice(idx, 1);
             icon.className = 'far fa-square text-gray-400';
             text.textContent = 'Select';
             btnEl.classList.remove('bg-accent/20', 'border-accent', 'text-accent-light');
             btnEl.classList.add('border-white/10');
         } else {
-            // Select
-            selectedClips.push({ slug, title, duration: parseInt(duration), thumbnail_url: thumbnail, broadcaster_name: '{{ streamer_login }}' });
+            selectedClips.push({ slug, title, duration: parseInt(duration), thumbnail_url: thumbnail, broadcaster_name: STREAMER });
             icon.className = 'fas fa-square-check text-accent-light';
             text.textContent = 'Selected';
             btnEl.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
@@ -201,11 +331,8 @@
         updateBar();
     };
 
-    // Navigate to generate page
     window.goToGenerate = function() {
         if (selectedClips.length === 0) return;
-
-        // Store in sessionStorage and redirect
         sessionStorage.setItem('selected_clips', JSON.stringify(selectedClips));
         window.location.href = '/generate';
     };
@@ -214,17 +341,10 @@
     window.openPlayer = function(slug) {
         const modal = document.getElementById('player-modal');
         const container = document.getElementById('player-container');
-
         const host = window.location.hostname || 'localhost';
         container.innerHTML = `<iframe
             src="https://clips.twitch.tv/embed?clip=${encodeURIComponent(slug)}&parent=${host}"
-            width="100%"
-            height="100%"
-            allowfullscreen
-            class="w-full h-full"
-            style="border:none;"
-        ></iframe>`;
-
+            width="100%" height="100%" allowfullscreen class="w-full h-full" style="border:none;"></iframe>`;
         modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
     };
@@ -237,7 +357,6 @@
         document.body.style.overflow = '';
     };
 
-    // Close modal on Escape
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') closePlayer();
     });

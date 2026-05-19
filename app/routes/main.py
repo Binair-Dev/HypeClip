@@ -4,6 +4,13 @@ from app.services import twitch_service as twitch_svc
 
 main_bp = Blueprint('main', __name__)
 
+# Category definitions: (sort, period)
+CATEGORIES = {
+    'trending':    {'sort': 'TRENDING',   'period': 'LAST_DAY',   'label': 'Trending',    'icon': 'fa-fire'},
+    'most_viewed': {'sort': 'VIEWS_DESC', 'period': 'ALL_TIME',   'label': 'Most Viewed', 'icon': 'fa-eye'},
+    'recent':      {'sort': 'VIEWS_DESC', 'period': 'LAST_WEEK',  'label': 'Recent',      'icon': 'fa-clock'},
+}
+
 
 @main_bp.route('/login', methods=['GET', 'POST'])
 def login():
@@ -40,11 +47,30 @@ def search_streamer():
 
 @main_bp.route('/clips/<streamer_login>')
 def get_clips(streamer_login):
-    clips = twitch_svc.get_trending_clips(streamer_login)
-    return render_template('clips.html', clips=clips, streamer_login=streamer_login)
+    # Default: load trending clips server-side
+    clips = twitch_svc.get_trending_clips(
+        streamer_login,
+        sort=CATEGORIES['trending']['sort'],
+        period=CATEGORIES['trending']['period'],
+    )
+    return render_template(
+        'clips.html',
+        clips=clips,
+        streamer_login=streamer_login,
+        categories=CATEGORIES,
+        active_category='trending',
+    )
 
 
-@main_bp.route('/api/clips/<streamer_login>')
-def api_clips(streamer_login):
-    clips = twitch_svc.get_trending_clips(streamer_login)
+@main_bp.route('/api/clips/<streamer_login>/<category>')
+def api_clips_category(streamer_login, category):
+    cat = CATEGORIES.get(category)
+    if not cat:
+        return jsonify({'error': f'Unknown category: {category}'}), 400
+
+    clips = twitch_svc.get_trending_clips(
+        streamer_login,
+        sort=cat['sort'],
+        period=cat['period'],
+    )
     return jsonify(clips)
