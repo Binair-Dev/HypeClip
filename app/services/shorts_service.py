@@ -174,8 +174,9 @@ def _build_ffmpeg_command(
 
             # Position overlay
             # x_pct/y_pct is center-based
-            overlay_x_expr = f"({x_pct}*W/100-ow/2)"
-            overlay_y_expr = f"({y_pct}*H/100-oh/2)"
+            # In overlay x/y expressions: W/H = main video, w/h = overlay image
+            overlay_x_expr = f"({x_pct}*W/100-w/2)"
+            overlay_y_expr = f"({y_pct}*H/100-h/2)"
 
             filters.append(
                 f"[{video_label}][custom_img]overlay={overlay_x_expr}:{overlay_y_expr}:format=auto[video_with_overlay]"

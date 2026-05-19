@@ -184,9 +184,20 @@
                     addResultCard(short);
                 });
                 downloadAllBtn.disabled = false;
+                finishAll();
+            } else {
+                // No results — check if all clips failed
+                const progResp = await fetch('/api/progress/' + sessionId);
+                const progData = await progResp.json();
+                const allFailed = progData.clips && progData.clips.every(function(c) { return c.status === 'failed'; });
+                if (allFailed) {
+                    progressTitle.textContent = 'Generation failed — all clips errored';
+                    progressTitle.classList.add('text-red-400');
+                    progressSpinner.innerHTML = '<i class="fas fa-circle-xmark text-red-400 text-xl"></i>';
+                } else {
+                    finishAll();
+                }
             }
-
-            finishAll();
         } catch(err) {
             console.error('Fetch results error:', err);
             finishAll();
