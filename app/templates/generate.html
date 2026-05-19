@@ -415,6 +415,12 @@
                     class="w-16 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
                 <span id="custom-text-rotation-val" class="text-gray-400 text-xs w-8">0°</span>
             </div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-gray-400 text-xs">Padding</span>
+                <input type="range" id="custom-text-padding" min="0" max="100" value="50"
+                    class="w-16 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
+                <span id="custom-text-padding-val" class="text-gray-400 text-xs w-8">50%</span>
+            </div>
         </div>
         <!-- Row 2: Size slider + info + buttons -->
         <div class="flex items-center justify-between">
@@ -626,6 +632,12 @@
     // Custom text rotation slider → update display
     document.getElementById('custom-text-rotation').addEventListener('input', function() {
         document.getElementById('custom-text-rotation-val').textContent = this.value + '°';
+        drawCustomTextCanvas();
+    });
+
+    // Custom text padding slider → update display
+    document.getElementById('custom-text-padding').addEventListener('input', function() {
+        document.getElementById('custom-text-padding-val').textContent = this.value + '%';
         drawCustomTextCanvas();
     });
 
@@ -2230,7 +2242,8 @@
 
         // Calculate text size — ~5% of canvas height for fontsize
         var fontSize = ch * 0.05;
-        var textPadding = fontSize * 0.4;
+        var paddingPct = parseInt(document.getElementById('custom-text-padding').value) || 50;
+        var textPadding = fontSize * (0.2 + paddingPct * 0.016);
         canvas._fontSize = fontSize;
         canvas._textPadding = textPadding;
 

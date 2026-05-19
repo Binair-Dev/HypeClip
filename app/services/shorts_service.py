@@ -204,6 +204,10 @@ def _build_ffmpeg_command(
             # Rotation: degrees from frontend
             rotation_deg = float(custom_text.get("rotation", 0))
 
+            # Padding: 0-100 slider from frontend, mapped to fontsize multiplier
+            padding_pct = int(custom_text.get("padding", 50))
+            padding = max(4, round(fontsize * (0.2 + padding_pct * 0.016)))
+
             fontsize_pct = float(pos.get("fontsize_pct", 3.0))
             fontsize = max(20, round(1920 * fontsize_pct / 100))
 
@@ -214,9 +218,6 @@ def _build_ffmpeg_command(
             else:
                 x_expr = "(w-text_w)/2"
                 y_expr = "(h-text_h)/2"
-
-            # Padding: generous padding so text doesn't touch the border
-            padding = round(fontsize * 0.7)
 
             # Write text to a temp file to avoid all shell-escaping issues
             text_file = tempfile.NamedTemporaryFile(
@@ -258,7 +259,7 @@ def _build_ffmpeg_command(
 
                 # 1. Create transparent canvas + draw text centered
                 ct_filters = (
-                    f"color=c=0x00000000@s={canvas_w}x{canvas_h},"
+                    f"color=color=0x00000000:size={canvas_w}x{canvas_h},"
                     f"drawtext="
                     f"textfile='{text_file.name}':"
                     f"fontfile={font}:"
