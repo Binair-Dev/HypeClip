@@ -204,12 +204,12 @@ def _build_ffmpeg_command(
             # Rotation: degrees from frontend
             rotation_deg = float(custom_text.get("rotation", 0))
 
+            fontsize_pct = float(pos.get("fontsize_pct", 3.0))
+            fontsize = max(20, round(1920 * fontsize_pct / 100))
+
             # Padding: 0-100 slider from frontend, mapped to fontsize multiplier
             padding_pct = int(custom_text.get("padding", 50))
             padding = max(4, round(fontsize * (0.2 + padding_pct * 0.016)))
-
-            fontsize_pct = float(pos.get("fontsize_pct", 3.0))
-            fontsize = max(20, round(1920 * fontsize_pct / 100))
 
             # Position: center-based x_pct/y_pct
             if pos:
@@ -258,8 +258,9 @@ def _build_ffmpeg_command(
                 canvas_h = max(canvas_h, 100)
 
                 # 1. Create transparent canvas + draw text centered
+                # color= produces infinite frames — trim it to match video duration via shortest=1 on the final overlay
                 ct_filters = (
-                    f"color=color=0x00000000:size={canvas_w}x{canvas_h},"
+                    f"color=color=0x00000000:size={canvas_w}x{canvas_h}:rate=30,"
                     f"drawtext="
                     f"textfile='{text_file.name}':"
                     f"fontfile={font}:"
@@ -284,11 +285,11 @@ def _build_ffmpeg_command(
                 )
                 filters.append(rot_filters)
 
-                # 3. Overlay on main video — center-based positioning
+                # 3. Overlay on main video — shortest=1 so we stop when the video ends (not the infinite color source)
                 overlay_x = f"({pos.get('x_pct', 50)}*W/100-w/2)"
                 overlay_y = f"({pos.get('y_pct', 50)}*H/100-h/2)"
                 overlay_filter = (
-                    f"[{video_label}][ct_rot]overlay={overlay_x}:{overlay_y}:format=auto[video_with_ctext]"
+                    f"[{video_label}][ct_rot]overlay={overlay_x}:{overlay_y}:format=auto:shortest=1[video_with_ctext]"
                 )
                 filters.append(overlay_filter)
                 video_label = "video_with_ctext"
