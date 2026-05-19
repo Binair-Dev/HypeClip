@@ -157,14 +157,20 @@ def _build_ffmpeg_command(
             # Rotation in radians for FFmpeg rotate filter
             rot_rad = rotation * math.pi / 180
 
-            # For rotation, we need to handle the extra space
-            # Use format=rgba to support transparency, rotate fills with transparent
-            # :ow=rotw(iw/a):oh=roth(iw/a) auto-sizes to fit rotated image
+            # Scale image to target height, keep aspect ratio
             filters.append(
-                f"[1:v]scale=-2:{img_h},format=rgba,"
-                f"rotate={rot_rad}:c=none@0:ow=rotw({img_h}*iw/ih):oh=roth({img_h}*iw/ih)"
-                f"[custom_img]"
+                f"[1:v]scale=-2:{img_h},format=rgba[custom_scaled]"
             )
+
+            # Apply rotation if non-zero
+            if abs(rotation) > 0.1:
+                # FFmpeg rotate: c=0x00000000 (transparent black), ow/oh in pixels
+                # Use hypot to calculate bounding box of rotated image
+                filters.append(
+                    f"[custom_scaled]rotate={rot_rad}:c=0x00000000:ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)[custom_img]"
+                )
+            else:
+                filters.append("[custom_scaled]copy[custom_img]")
 
             # Position overlay
             # x_pct/y_pct is center-based
