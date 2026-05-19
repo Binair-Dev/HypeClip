@@ -59,6 +59,7 @@ def _build_ffmpeg_command(
     streamer_name: Optional[str] = None,
     name_position: Optional[dict] = None,
     custom_overlay: Optional[dict] = None,
+    custom_text: Optional[dict] = None,
 ) -> list:
     """Build an FFmpeg command that produces a 1080×1920 short.
 
@@ -67,6 +68,7 @@ def _build_ffmpeg_command(
     * If *streamer_name* is provided a drawtext filter is appended.
     * If *name_position* is provided the text overlay is positioned accordingly.
     * If *custom_overlay* is provided, an image is overlaid with rotation support.
+    * If *custom_text* is provided, a text box with background is drawn.
     * Uses CPU encoding (libx264).
     """
     cmd = ["ffmpeg", "-y", "-i", input_path]
@@ -182,6 +184,56 @@ def _build_ffmpeg_command(
                 f"[{video_label}][custom_img]overlay={overlay_x_expr}:{overlay_y_expr}:format=auto[video_with_overlay]"
             )
             video_label = "video_with_overlay"
+
+    # 5. Custom text box overlay
+    if custom_text:
+        text_value = custom_text.get("text", "")
+        if text_value.strip():
+            font = _font_path()
+            safe_text = text_value.upper().replace("'", "'\\''")
+            text_color = custom_text.get("text_color", "ffffff")
+            bg_color = custom_text.get("bg_color", "000000")
+            pos = custom_text.get("position", {})
+
+            fontsize_pct = float(pos.get("fontsize_pct", 3.0))
+            fontsize = max(20, round(1920 * fontsize_pct / 100))
+
+            # Position: center-based x_pct/y_pct
+            if pos:
+                x_expr = f"({pos.get('x_pct', 50)}*w/100-text_w/2)"
+                y_expr = f"({pos.get('y_pct', 50)}*h/100-text_h/2)"
+            else:
+                x_expr = "(w-text_w)/2"
+                y_expr = "(h-text_h)/2"
+
+            # Background box: drawbox with rounded corners isn't native in FFmpeg,
+            # so we use a two-step approach:
+            # 1. drawbox for the background rectangle (with some padding via borderw trick)
+            # 2. drawtext for the actual text
+            # We approximate rounded corners using box borderw as padding
+            padding = round(fontsize * 0.4)
+
+            # drawbox: x/y positioned relative to text position (use text metrics)
+            # We need the box to match text dimensions. drawbox can use text_w/text_h
+            # but only in drawtext filter, not in drawbox.
+            # Solution: combine drawtext with box=1 and boxborderw for padding
+            text_filter = (
+                f"[{video_label}]drawtext="
+                f"text='{safe_text}':"
+                f"fontfile={font}:"
+                f"fontsize={fontsize}:"
+                f"fontcolor=0x{text_color}:"
+                f"box=1:"
+                f"boxcolor=0x{bg_color}@0.85:"
+                f"boxborderw={padding}:"
+                f"borderw=2:"
+                f"bordercolor=0x{bg_color}:"
+                f"x={x_expr}:"
+                f"y={y_expr}"
+                f"[video_with_ctext]"
+            )
+            filters.append(text_filter)
+            video_label = "video_with_ctext"
 
     filter_complex = ";".join(filters)
     cmd.extend(["-filter_complex", filter_complex])
@@ -454,6 +506,7 @@ class ShortsService:
             streamer_name=streamer_name,
             name_position=options.get("name_position"),
             custom_overlay=custom_overlay,
+            custom_text=options.get("custom_text"),
         )
 
         self._update_clip_status(session_id, slug, "processing", 65)
