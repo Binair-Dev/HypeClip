@@ -95,6 +95,38 @@
                     <span id="name-position-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
                 </button>
             </div>
+
+            <!-- Divider -->
+            <div class="border-t border-white/5"></div>
+
+            <!-- Custom Overlay toggle -->
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-white font-medium">Custom Overlay</div>
+                    <div class="text-gray-500 text-sm">Add a custom image overlay on the Short</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="opt-custom-overlay" class="sr-only peer" />
+                    <div class="w-11 h-6 bg-dark-500 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
+                </label>
+            </div>
+            <!-- Custom Overlay upload & position buttons (shown when opt-custom-overlay is checked) -->
+            <div id="custom-overlay-row" class="hidden flex items-center justify-between pl-4">
+                <div class="text-gray-400 text-sm">Upload & position a custom image on the Short</div>
+                <div class="flex items-center gap-2">
+                    <input type="file" id="custom-overlay-file" accept="image/*" class="hidden" />
+                    <button id="btn-upload-overlay" onclick="document.getElementById('custom-overlay-file').click()"
+                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">
+                        <i class="fas fa-upload mr-1"></i>Upload Image
+                        <span id="overlay-upload-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
+                    </button>
+                    <button id="btn-position-overlay" onclick="openImageOverlayModal()"
+                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent hidden">
+                        <i class="fas fa-arrows-up-down-left-right mr-1"></i>Position Overlay
+                        <span id="overlay-position-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -257,6 +289,58 @@
     </div>
 </div>
 
+<!-- Image overlay modal — fullscreen 9:16 preview -->
+<div id="image-overlay-modal" class="hidden fixed inset-0 z-[60] bg-black flex flex-col">
+    <!-- Top bar -->
+    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-b border-white/5 flex-shrink-0">
+        <div class="flex items-center gap-4">
+            <h3 class="text-white text-base font-semibold">
+                <i class="fas fa-image text-accent mr-2"></i>Position Custom Overlay on Short
+            </h3>
+            <p class="text-gray-500 text-xs hidden sm:block">Drag the image where you want it on the final Short</p>
+        </div>
+        <button onclick="closeImageOverlayModal()" class="text-gray-400 hover:text-white transition-colors ml-4">
+            <i class="fas fa-xmark text-xl"></i>
+        </button>
+    </div>
+
+    <!-- Canvas area -->
+    <div class="flex-1 flex items-center justify-center overflow-hidden relative bg-dark-950">
+        <div id="img-overlay-canvas-wrap" class="w-full h-full flex items-center justify-center">
+            <canvas id="img-overlay-canvas" class="cursor-default"></canvas>
+        </div>
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
+        <div class="flex items-center gap-4">
+            <div id="img-overlay-info" class="text-gray-500 text-xs font-mono"></div>
+            <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-xs"><i class="fas fa-minimize"></i></span>
+                <input type="range" id="img-size-slider" min="30" max="250" value="100"
+                       class="w-24 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
+                       oninput="onImgOverlaySizeSlider(this.value)">
+                <span class="text-gray-500 text-xs"><i class="fas fa-maximize"></i></span>
+            </div>
+            <div class="flex items-center gap-2 ml-2">
+                <span class="text-gray-500 text-xs"><i class="fas fa-rotate"></i> 0°</span>
+                <input type="range" id="img-rotation-slider" min="0" max="360" step="1" value="0"
+                       class="w-24 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
+                       oninput="onImgOverlayRotationSlider(this.value)">
+                <span class="text-gray-500 text-xs">360°</span>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="resetImgOverlayPosition()" class="px-5 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
+                <i class="fas fa-rotate-left mr-1"></i> Reset
+            </button>
+            <button onclick="confirmImgOverlayPosition()" class="px-6 py-2.5 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg transition-colors">
+                <i class="fas fa-check mr-1"></i> Confirm Position
+            </button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -304,6 +388,20 @@
     let nameBaseOverlayH = 0;
     let nameDragging = false;
     let nameDragOffset = { x: 0, y: 0 };
+
+    // Custom image overlay state
+    let customImageSrc = null;       // data URL from FileReader
+    let customImageObj = null;       // HTMLImageElement (loaded from customImageSrc)
+    let customImagePosition = null;  // { x_pct, y_pct, height_pct, rotation }
+    let imgOverlayX = 0;
+    let imgOverlayY = 0;
+    let imgOverlayW = 0;
+    let imgOverlayH = 0;
+    let imgBaseOverlayW = 0;
+    let imgBaseOverlayH = 0;
+    let imgOverlayRotation = 0;      // degrees
+    let imgDragging = false;
+    let imgDragOffset = { x: 0, y: 0 };
 
     // Canvas drawing state
     let canvasRect = null;
@@ -387,6 +485,35 @@
         } else {
             row.classList.add('hidden');
         }
+    });
+
+    // Custom overlay toggle → show/hide upload & position buttons
+    document.getElementById('opt-custom-overlay').addEventListener('change', function() {
+        var row = document.getElementById('custom-overlay-row');
+        if (this.checked) {
+            row.classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
+    });
+
+    // Custom overlay file upload handler
+    document.getElementById('custom-overlay-file').addEventListener('change', function(e) {
+        var file = e.target.files && e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            customImageSrc = ev.target.result;
+            // Load as Image object
+            var img = new Image();
+            img.onload = function() {
+                customImageObj = img;
+                document.getElementById('overlay-upload-status').classList.remove('hidden');
+                document.getElementById('btn-position-overlay').classList.remove('hidden');
+            };
+            img.src = customImageSrc;
+        };
+        reader.readAsDataURL(file);
     });
 
     // Remove a clip from selection
@@ -823,6 +950,7 @@
             closePositionModal();
             closeWebcamModal();
             closeNameModal();
+            closeImageOverlayModal();
         }
     });
 
@@ -1302,6 +1430,30 @@
         // Draw 9:16 background (center-cropped from frame)
         ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
 
+        // Draw webcam overlay indicator if webcam region & position are set
+        if (webcamRegion && webcamPosition) {
+            var camX = (webcamPosition.x_pct / 100) * cw;
+            var camY = (webcamPosition.y_pct / 100) * ch;
+            var camH = (webcamPosition.height_pct / 100) * ch;
+            var camW = camH * (webcamRegion.w / webcamRegion.h);
+
+            // Semi-transparent fill
+            ctx.fillStyle = 'rgba(0, 255, 136, 0.15)';
+            ctx.fillRect(camX, camY, camW, camH);
+            // Border
+            ctx.strokeStyle = 'rgba(0, 255, 136, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 3]);
+            ctx.strokeRect(camX, camY, camW, camH);
+            ctx.setLineDash([]);
+            // Label
+            ctx.font = 'bold ' + Math.max(10, camH * 0.15) + 'px sans-serif';
+            ctx.fillStyle = 'rgba(0, 255, 136, 0.7)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('WEBCAM', camX + camW / 2, camY + camH / 2);
+        }
+
         // Draw text overlay placeholder
         var drawX = Math.round(nameOverlayX);
         var drawY = Math.round(nameOverlayY);
@@ -1511,6 +1663,352 @@
         nameDragging = false;
     };
 
+    // ---- Custom Image Overlay Modal ----
+    window.openImageOverlayModal = async function() {
+        if (!customImageObj) {
+            alert('Please upload an image first.');
+            return;
+        }
+        if (clips.length === 0) return;
+
+        var modal = document.getElementById('image-overlay-modal');
+        modal.classList.remove('hidden');
+
+        // Load frame from first clip if not already loaded
+        if (!frameImage) {
+            var slug = clips[0].slug;
+            try {
+                var img = new Image();
+                img.crossOrigin = 'anonymous';
+                await new Promise(function(resolve, reject) {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                    img.src = '/api/frame/' + slug + '?t=' + Date.now();
+                });
+                frameImage = img;
+                frameNaturalW = img.naturalWidth;
+                frameNaturalH = img.naturalHeight;
+            } catch(err) {
+                console.error('Failed to load frame for image overlay modal:', err);
+                alert('Failed to load clip frame. Please try again.');
+                closeImageOverlayModal();
+                return;
+            }
+        }
+
+        requestAnimationFrame(function() {
+            setupImgOverlayCanvas();
+        });
+    };
+
+    function setupImgOverlayCanvas() {
+        var canvas = document.getElementById('img-overlay-canvas');
+        var wrap = document.getElementById('img-overlay-canvas-wrap');
+
+        // 9:16 aspect ratio, fill available space
+        var maxW = wrap.clientWidth - 32;
+        var maxH = wrap.clientHeight - 32;
+        var aspect916 = 9 / 16;
+
+        var cw, ch;
+        if (maxW / maxH > aspect916) {
+            ch = maxH;
+            cw = ch * aspect916;
+        } else {
+            cw = maxW;
+            ch = cw / aspect916;
+        }
+        canvas.width = Math.round(cw);
+        canvas.height = Math.round(ch);
+
+        // Calculate 9:16 center crop from the original frame
+        var srcAspect = frameNaturalW / frameNaturalH;
+        var cropSrcX, cropSrcY, cropSrcW, cropSrcH;
+        if (srcAspect > aspect916) {
+            cropSrcH = frameNaturalH;
+            cropSrcW = frameNaturalH * aspect916;
+            cropSrcX = (frameNaturalW - cropSrcW) / 2;
+            cropSrcY = 0;
+        } else {
+            cropSrcW = frameNaturalW;
+            cropSrcH = frameNaturalW / aspect916;
+            cropSrcX = 0;
+            cropSrcY = (frameNaturalH - cropSrcH) / 2;
+        }
+
+        // Store crop params for drawing
+        canvas._cropSrc = { x: cropSrcX, y: cropSrcY, w: cropSrcW, h: cropSrcH };
+
+        // Calculate image overlay size — fit within canvas, max 30% of canvas height
+        var imgAspect = customImageObj.naturalWidth / customImageObj.naturalHeight;
+        var maxOverlayH = ch * 0.3;
+        imgBaseOverlayH = maxOverlayH;
+        imgBaseOverlayW = maxOverlayH * imgAspect;
+
+        // Restore saved position & size, or default center
+        if (customImagePosition) {
+            imgOverlayH = (customImagePosition.height_pct / 100) * ch;
+            imgOverlayW = imgOverlayH * imgAspect;
+            imgOverlayX = (customImagePosition.x_pct / 100) * cw - imgOverlayW / 2;
+            imgOverlayY = (customImagePosition.y_pct / 100) * ch - imgOverlayH / 2;
+            imgOverlayRotation = customImagePosition.rotation || 0;
+        } else {
+            imgOverlayW = imgBaseOverlayW;
+            imgOverlayH = imgBaseOverlayH;
+            imgOverlayX = (cw - imgOverlayW) / 2;
+            imgOverlayY = (ch - imgOverlayH) / 2;
+            imgOverlayRotation = 0;
+        }
+
+        // Update sliders
+        var sizeSlider = document.getElementById('img-size-slider');
+        if (sizeSlider && imgBaseOverlayH > 0) {
+            sizeSlider.value = Math.round((imgOverlayH / imgBaseOverlayH) * 100);
+        }
+        var rotSlider = document.getElementById('img-rotation-slider');
+        if (rotSlider) {
+            rotSlider.value = imgOverlayRotation;
+        }
+
+        drawImgOverlayCanvas();
+        setupImgOverlayEvents();
+    }
+
+    function drawImgOverlayCanvas() {
+        var canvas = document.getElementById('img-overlay-canvas');
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        var cw = canvas.width;
+        var ch = canvas.height;
+        if (cw === 0 || ch === 0) return;
+        var crop = canvas._cropSrc;
+        if (!crop) return;
+
+        ctx.clearRect(0, 0, cw, ch);
+
+        // Draw 9:16 background (center-cropped from frame)
+        ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
+
+        // Draw webcam overlay if set
+        if (webcamRegion && webcamPosition) {
+            var camX = (webcamPosition.x_pct / 100) * cw;
+            var camY = (webcamPosition.y_pct / 100) * ch;
+            var camH = (webcamPosition.height_pct / 100) * ch;
+            var camW = camH * (webcamRegion.w / webcamRegion.h);
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 12;
+            ctx.shadowOffsetY = 4;
+            ctx.drawImage(frameImage, webcamRegion.x, webcamRegion.y, webcamRegion.w, webcamRegion.h,
+                           camX, camY, camW, camH);
+            ctx.restore();
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(camX, camY, camW, camH);
+        }
+
+        // Draw name text if set
+        var showNameFlag = document.getElementById('opt-name').checked;
+        if (showNameFlag && namePosition) {
+            var broadcasterName = (clips[0] && clips[0].broadcaster_name) || 'STREAMER';
+            var fontSize = (namePosition.fontsize_pct / 100) * ch;
+            var textPadding = fontSize * 0.4;
+            var nameCenterX = (namePosition.x_pct / 100) * cw;
+            var nameCenterY = (namePosition.y_pct / 100) * ch;
+
+            ctx.font = 'bold ' + fontSize + 'px sans-serif';
+            var tm = ctx.measureText(broadcasterName.toUpperCase());
+            var textW = tm.width + textPadding * 2;
+            var textH = fontSize + textPadding * 2;
+            var nameBoxX = nameCenterX - textW / 2;
+            var nameBoxY = nameCenterY - textH / 2;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            roundRect(ctx, nameBoxX, nameBoxY, textW, textH, 8);
+            ctx.fill();
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            roundRect(ctx, nameBoxX, nameBoxY, textW, textH, 8);
+            ctx.stroke();
+            ctx.font = 'bold ' + fontSize + 'px sans-serif';
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(broadcasterName.toUpperCase(), nameCenterX, nameCenterY);
+        }
+
+        // Draw custom image overlay with rotation
+        var drawW = Math.max(5, Math.round(imgOverlayW));
+        var drawH = Math.max(5, Math.round(imgOverlayH));
+        var centerX = imgOverlayX + drawW / 2;
+        var centerY = imgOverlayY + drawH / 2;
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(imgOverlayRotation * Math.PI / 180);
+        // Draw image centered at origin
+        ctx.drawImage(customImageObj, -drawW / 2, -drawH / 2, drawW, drawH);
+        // Border around image
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
+
+        // Update info
+        var infoEl = document.getElementById('img-overlay-info');
+        if (imgBaseOverlayH > 0) {
+            var xPct = (((imgOverlayX + imgOverlayW / 2) / cw) * 100).toFixed(1);
+            var yPct = (((imgOverlayY + imgOverlayH / 2) / ch) * 100).toFixed(1);
+            var scalePct = Math.round((imgOverlayH / imgBaseOverlayH) * 100);
+            infoEl.textContent = 'x=' + xPct + '%  y=' + yPct + '%  size=' + scalePct + '%  rot=' + imgOverlayRotation + '°';
+        }
+    }
+
+    function setupImgOverlayEvents() {
+        var canvas = document.getElementById('img-overlay-canvas');
+
+        // Remove old listeners by replacing element
+        var newCanvas = canvas.cloneNode(false);
+        canvas.parentNode.replaceChild(newCanvas, canvas);
+        newCanvas.id = 'img-overlay-canvas';
+        newCanvas.width = canvas.width;
+        newCanvas.height = canvas.height;
+
+        // Copy stored data
+        newCanvas._cropSrc = canvas._cropSrc;
+
+        // Redraw
+        drawImgOverlayCanvas();
+
+        newCanvas.addEventListener('mousedown', onImgOverlayMouseDown);
+        newCanvas.addEventListener('mousemove', onImgOverlayMouseMove);
+        newCanvas.addEventListener('mouseup', onImgOverlayMouseUp);
+        document.addEventListener('mouseup', onImgOverlayMouseUp);
+
+        // Touch support
+        newCanvas.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            var touch = e.touches[0];
+            onImgOverlayMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
+        }, { passive: false });
+        newCanvas.addEventListener('touchmove', function(e) {
+            e.preventDefault();
+            var touch = e.touches[0];
+            onImgOverlayMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+        }, { passive: false });
+        newCanvas.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            onImgOverlayMouseUp();
+        });
+    }
+
+    function getImgOverlayCanvasCoords(e) {
+        var canvas = document.getElementById('img-overlay-canvas');
+        var rect = canvas.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left) * (canvas.width / rect.width),
+            y: (e.clientY - rect.top) * (canvas.height / rect.height)
+        };
+    }
+
+    function onImgOverlayMouseDown(e) {
+        var pos = getImgOverlayCanvasCoords(e);
+        if (pos.x >= imgOverlayX && pos.x <= imgOverlayX + imgOverlayW &&
+            pos.y >= imgOverlayY && pos.y <= imgOverlayY + imgOverlayH) {
+            imgDragging = true;
+            imgDragOffset = {
+                x: pos.x - imgOverlayX,
+                y: pos.y - imgOverlayY
+            };
+        }
+    }
+
+    function onImgOverlayMouseMove(e) {
+        var canvas = document.getElementById('img-overlay-canvas');
+        if (imgDragging) {
+            var pos = getImgOverlayCanvasCoords(e);
+            var nx = pos.x - imgDragOffset.x;
+            var ny = pos.y - imgDragOffset.y;
+            // Clamp within canvas
+            nx = Math.max(0, Math.min(nx, canvas.width - imgOverlayW));
+            ny = Math.max(0, Math.min(ny, canvas.height - imgOverlayH));
+            imgOverlayX = nx;
+            imgOverlayY = ny;
+            drawImgOverlayCanvas();
+        } else {
+            // Update cursor based on hover
+            var pos = getImgOverlayCanvasCoords(e);
+            if (pos.x >= imgOverlayX && pos.x <= imgOverlayX + imgOverlayW &&
+                pos.y >= imgOverlayY && pos.y <= imgOverlayY + imgOverlayH) {
+                canvas.style.cursor = 'grab';
+            } else {
+                canvas.style.cursor = 'default';
+            }
+        }
+    }
+
+    function onImgOverlayMouseUp() {
+        imgDragging = false;
+    }
+
+    window.onImgOverlaySizeSlider = function(val) {
+        var canvas = document.getElementById('img-overlay-canvas');
+        if (!canvas || imgBaseOverlayH <= 0 || !customImageObj) return;
+        var scale = parseInt(val) / 100;
+        var imgAspect = customImageObj.naturalWidth / customImageObj.naturalHeight;
+        var newH = imgBaseOverlayH * scale;
+        var newW = newH * imgAspect;
+        // Keep center point stable
+        var cx = imgOverlayX + imgOverlayW / 2;
+        var cy = imgOverlayY + imgOverlayH / 2;
+        imgOverlayX = cx - newW / 2;
+        imgOverlayY = cy - newH / 2;
+        imgOverlayW = newW;
+        imgOverlayH = newH;
+        drawImgOverlayCanvas();
+    };
+
+    window.onImgOverlayRotationSlider = function(val) {
+        imgOverlayRotation = parseInt(val);
+        drawImgOverlayCanvas();
+    };
+
+    window.resetImgOverlayPosition = function() {
+        var canvas = document.getElementById('img-overlay-canvas');
+        if (!canvas || !customImageObj) return;
+        var imgAspect = customImageObj.naturalWidth / customImageObj.naturalHeight;
+        imgOverlayW = imgBaseOverlayW;
+        imgOverlayH = imgBaseOverlayH;
+        imgOverlayX = (canvas.width - imgOverlayW) / 2;
+        imgOverlayY = (canvas.height - imgOverlayH) / 2;
+        imgOverlayRotation = 0;
+        document.getElementById('img-size-slider').value = 100;
+        document.getElementById('img-rotation-slider').value = 0;
+        drawImgOverlayCanvas();
+    };
+
+    window.confirmImgOverlayPosition = function() {
+        var canvas = document.getElementById('img-overlay-canvas');
+        if (!canvas) return;
+        var cw = canvas.width;
+        var ch = canvas.height;
+        customImagePosition = {
+            x_pct: parseFloat((((imgOverlayX + imgOverlayW / 2) / cw) * 100).toFixed(1)),
+            y_pct: parseFloat((((imgOverlayY + imgOverlayH / 2) / ch) * 100).toFixed(1)),
+            height_pct: parseFloat(((imgOverlayH / ch) * 100).toFixed(2)),
+            rotation: imgOverlayRotation
+        };
+        closeImageOverlayModal();
+        // Show green check on button
+        document.getElementById('overlay-position-status').classList.remove('hidden');
+    };
+
+    window.closeImageOverlayModal = function() {
+        document.getElementById('image-overlay-modal').classList.add('hidden');
+        imgDragging = false;
+    };
+
     // Start generation
     window.startGeneration = async function() {
         if (clips.length === 0) return;
@@ -1522,6 +2020,7 @@
 
         const webcam = document.getElementById('opt-webcam').checked;
         const showName = document.getElementById('opt-name').checked;
+        const useCustomOverlay = document.getElementById('opt-custom-overlay').checked;
 
         // Build clips payload with webcam regions + positions
         const clipsPayload = clips.map(function(clip, i) {
@@ -1537,6 +2036,12 @@
                     payload.webcam_position = webcamPosition;
                 }
             }
+            if (useCustomOverlay && customImageSrc && customImagePosition) {
+                payload.custom_overlay = {
+                    image_data: customImageSrc,
+                    position: customImagePosition
+                };
+            }
             return payload;
         });
 
@@ -1551,7 +2056,10 @@
                     options: {
                         webcam: webcam,
                         streamer_name: showName,
-                        name_position: namePosition
+                        name_position: namePosition,
+                        custom_overlay: useCustomOverlay && customImageSrc && customImagePosition ? {
+                            position: customImagePosition
+                        } : null
                     }
                 })
             });

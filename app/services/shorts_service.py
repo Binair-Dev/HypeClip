@@ -10,6 +10,7 @@ No DB, no Hypesync imports.
 
 import json
 import logging
+import math
 import os
 import subprocess
 import threading
@@ -57,6 +58,7 @@ def _build_ffmpeg_command(
     webcam_position: Optional[dict] = None,
     streamer_name: Optional[str] = None,
     name_position: Optional[dict] = None,
+    custom_overlay: Optional[dict] = None,
 ) -> list:
     """Build an FFmpeg command that produces a 1080×1920 short.
 
@@ -64,6 +66,7 @@ def _build_ffmpeg_command(
     * If *webcam_region* is provided the webcam strip is overlaid.
     * If *streamer_name* is provided a drawtext filter is appended.
     * If *name_position* is provided the text overlay is positioned accordingly.
+    * If *custom_overlay* is provided, an image is overlaid with rotation support.
     * Uses CPU encoding (libx264).
     """
     cmd = ["ffmpeg", "-y", "-i", input_path]
@@ -134,6 +137,44 @@ def _build_ffmpeg_command(
         )
         filters.append(text_filter)
         video_label = "final"
+
+    # 4. Custom image overlay (with rotation)
+    if custom_overlay:
+        overlay_img = custom_overlay.get("image_path")
+        if overlay_img and Path(overlay_img).exists():
+            cmd.insert(2, "-i")
+            cmd.insert(3, overlay_img)
+            # Input index for custom image: 1 (0 is video)
+            pos = custom_overlay.get("position", {})
+            height_pct = float(pos.get("height_pct", 10.0))
+            rotation = float(pos.get("rotation", 0))
+            x_pct = float(pos.get("x_pct", 50))
+            y_pct = float(pos.get("y_pct", 50))
+
+            # Scale image: height_pct is % of 1920
+            img_h = max(40, round(1920 * height_pct / 100))
+
+            # Rotation in radians for FFmpeg rotate filter
+            rot_rad = rotation * math.pi / 180
+
+            # For rotation, we need to handle the extra space
+            # Use format=rgba to support transparency, rotate fills with transparent
+            # :ow=rotw(iw/a):oh=roth(iw/a) auto-sizes to fit rotated image
+            filters.append(
+                f"[1:v]scale=-2:{img_h},format=rgba,"
+                f"rotate={rot_rad}:c=none@0:ow=rotw({img_h}*iw/ih):oh=roth({img_h}*iw/ih)"
+                f"[custom_img]"
+            )
+
+            # Position overlay
+            # x_pct/y_pct is center-based
+            overlay_x_expr = f"({x_pct}*W/100-ow/2)"
+            overlay_y_expr = f"({y_pct}*H/100-oh/2)"
+
+            filters.append(
+                f"[{video_label}][custom_img]overlay={overlay_x_expr}:{overlay_y_expr}:format=auto[video_with_overlay]"
+            )
+            video_label = "video_with_overlay"
 
     filter_complex = ";".join(filters)
     cmd.extend(["-filter_complex", filter_complex])
@@ -363,6 +404,35 @@ class ShortsService:
             # Extract user-provided webcam position (percentage-based)
             webcam_position = clip.get("webcam_position")
 
+        # --- 3b. Custom image overlay (optional) ---------------------------
+        custom_overlay = None
+        custom_overlay_data = clip.get("custom_overlay")
+        if custom_overlay_data and custom_overlay_data.get("image_data"):
+            import base64
+            self._update_clip_status(session_id, slug, "processing", 48)
+            image_data = custom_overlay_data["image_data"]
+            # Strip data URL prefix if present (e.g. "data:image/png;base64,")
+            if "," in image_data:
+                image_data = image_data.split(",", 1)[1]
+            try:
+                img_bytes = base64.b64decode(image_data)
+                # Determine extension from magic bytes
+                if img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                    ext = "png"
+                elif img_bytes[:2] == b'\xff\xd8':
+                    ext = "jpg"
+                else:
+                    ext = "png"
+                overlay_img_path = session_dir / f"custom_overlay.{ext}"
+                overlay_img_path.write_bytes(img_bytes)
+                custom_overlay = {
+                    "image_path": str(overlay_img_path),
+                    "position": custom_overlay_data.get("position", {}),
+                }
+                log.info("Saved custom overlay image for %s: %s", slug, overlay_img_path)
+            except Exception:
+                log.exception("Failed to decode custom overlay image for %s", slug)
+
         # --- 4. Build and run FFmpeg ---------------------------------------
         self._update_clip_status(session_id, slug, "processing", 55)
 
@@ -376,6 +446,7 @@ class ShortsService:
             webcam_position=webcam_position,
             streamer_name=streamer_name,
             name_position=options.get("name_position"),
+            custom_overlay=custom_overlay,
         )
 
         self._update_clip_status(session_id, slug, "processing", 65)
