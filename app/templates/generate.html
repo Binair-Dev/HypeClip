@@ -623,6 +623,11 @@
         drawCustomTextCanvas();
     });
 
+    // Custom text input → redraw canvas on every keystroke
+    document.getElementById('custom-text-input').addEventListener('input', function() {
+        drawCustomTextCanvas();
+    });
+
     // Custom overlay file upload handler
     document.getElementById('custom-overlay-file').addEventListener('change', function(e) {
         var file = e.target.files && e.target.files[0];
@@ -2384,7 +2389,7 @@
         }
 
         // 5. Draw custom text overlay
-        var textValue = canvas._textValue || 'TEXT';
+        var textValue = document.getElementById('custom-text-input').value || 'TEXT';
         var textColor = document.getElementById('custom-text-color').value || '#ffffff';
         var bgColor = document.getElementById('custom-text-bg-color').value || '#000000';
         var bgOpacityEl = document.getElementById('custom-text-opacity');
@@ -2393,10 +2398,21 @@
         var rotationDeg = rotationEl ? parseFloat(rotationEl.value) : 0;
         var rotationRad = rotationDeg * Math.PI / 180;
 
+        // Padding from slider
+        var paddingPctVal = parseInt((document.getElementById('custom-text-padding') || {}).value) || 50;
+        var baseFontSize = canvas._fontSize || (ch * 0.05);
+        var textPadding = baseFontSize * (0.2 + paddingPctVal * 0.016);
+
+        // Re-measure text with current value and padding
+        ctx.font = 'bold ' + baseFontSize + 'px sans-serif';
+        var tm = ctx.measureText(textValue.toUpperCase());
+        var overlayW = tm.width + textPadding * 2;
+        var overlayH = baseFontSize + textPadding * 2;
+
         var drawX = Math.round(customTextOverlayX);
         var drawY = Math.round(customTextOverlayY);
-        var drawW = Math.max(10, Math.round(customTextOverlayW));
-        var drawH = Math.max(10, Math.round(customTextOverlayH));
+        var drawW = Math.max(10, Math.round(overlayW));
+        var drawH = Math.max(10, Math.round(overlayH));
 
         // Parse bg color for alpha version
         var bgR = parseInt(bgColor.slice(1, 3), 16);
