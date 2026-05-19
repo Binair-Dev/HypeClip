@@ -491,12 +491,11 @@
     let customTextPosition = null; // { x_pct, y_pct, fontsize_pct }
     let currentCustomTextClipIndex = null; // which clip is being edited
     let clipsCustomText = {}; // keyed by clip index: { 0: { text, text_color, bg_color, opacity, rotation, padding, position }, ... }
-    let customTextOverlayX = 0;
-    let customTextOverlayY = 0;
-    let customTextOverlayW = 0;
-    let customTextOverlayH = 0;
-    let customTextBaseOverlayW = 0;
-    let customTextBaseOverlayH = 0;
+    let customTextCenterX = 0;   // center position in canvas coords
+    let customTextCenterY = 0;
+    let customTextOverlayW = 0;  // computed box width (for hit-test, updated by draw)
+    let customTextOverlayH = 0;  // computed box height (for hit-test, updated by draw)
+    let customTextSizeScale = 1.0; // size slider scale factor (independent of padding)
     let customTextDragging = false;
     let customTextDragOffset = { x: 0, y: 0 };
 
@@ -555,8 +554,13 @@
                         <i class="fas fa-clock mr-1"></i>${mm}:${ss}
                     </div>
                 </div>
-                <button onclick="openCustomTextModal(${i})" class="${clipsCustomText[i] && clipsCustomText[i].text ? 'text-green-400' : 'text-gray-500'} hover:text-accent transition-colors p-1" title="Custom Text">
-                    <i class="fas fa-font text-sm"></i>
+                <button onclick="openCustomTextModal(${i})"
+                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
+                        ${clipsCustomText[i] && clipsCustomText[i].text
+                            ? 'border-green-500/60 text-green-400 bg-green-500/10'
+                            : 'border-white/10 text-gray-400 hover:border-accent/50 hover:text-accent hover:bg-accent/10'}"
+                    title="Custom Text">
+                    Ajouter du texte
                 </button>
                 <button onclick="removeClip(${i})" class="text-gray-500 hover:text-red-400 transition-colors p-1" title="Remove">
                     <i class="fas fa-trash-can text-sm"></i>
@@ -2262,44 +2266,25 @@
         canvas._cropSrc = { x: cropSrcX, y: cropSrcY, w: cropSrcW, h: cropSrcH };
         canvas._textValue = textValue;
 
-        // Calculate text size — ~5% of canvas height for fontsize
-        var fontSize = ch * 0.05;
-        var paddingPct = parseInt(document.getElementById('custom-text-padding').value) || 50;
-        var textPadding = fontSize * (0.2 + paddingPct * 0.016);
-        canvas._fontSize = fontSize;
-        canvas._textPadding = textPadding;
+        // Store base font size on canvas for use by drawCustomTextCanvas
+        var baseFontSize = ch * 0.05;
+        canvas._baseFontSize = baseFontSize;
 
-        // Measure text width
-        var ctx = canvas.getContext('2d');
-        ctx.font = 'bold ' + fontSize + 'px sans-serif';
-        var textMetrics = ctx.measureText(textValue.toUpperCase());
-        var textW = textMetrics.width + textPadding * 2;
-        var textH = fontSize + textPadding * 2;
-
-        // Default base overlay size
-        customTextBaseOverlayW = textW;
-        customTextBaseOverlayH = textH;
-
-        // Restore saved position & size, or default center (60% down)
+        // Restore saved position & scale, or set defaults
         if (customTextPosition) {
-            var scaleFromBase = (customTextPosition.fontsize_pct / 100 * ch) / fontSize;
-            customTextOverlayH = customTextBaseOverlayH * scaleFromBase;
-            customTextOverlayW = customTextBaseOverlayW * scaleFromBase;
-            // x_pct/y_pct is center of overlay
-            customTextOverlayX = (customTextPosition.x_pct / 100) * cw - customTextOverlayW / 2;
-            customTextOverlayY = (customTextPosition.y_pct / 100) * ch - customTextOverlayH / 2;
+            customTextSizeScale = (customTextPosition.fontsize_pct / 100 * ch) / baseFontSize;
+            customTextCenterX = (customTextPosition.x_pct / 100) * cw;
+            customTextCenterY = (customTextPosition.y_pct / 100) * ch;
         } else {
-            customTextOverlayW = customTextBaseOverlayW;
-            customTextOverlayH = customTextBaseOverlayH;
-            customTextOverlayX = (cw - customTextOverlayW) / 2;
-            customTextOverlayY = ch * 0.6;
+            customTextSizeScale = 1.0;
+            customTextCenterX = cw / 2;
+            customTextCenterY = ch * 0.6;
         }
+        customTextOverlayW = 0;
+        customTextOverlayH = 0;
 
         // Update slider
-        var slider = document.getElementById('custom-text-size-slider');
-        if (slider && customTextBaseOverlayH > 0) {
-            slider.value = Math.round((customTextOverlayH / customTextBaseOverlayH) * 100);
-        }
+        document.getElementById('custom-text-size-slider').value = Math.round(customTextSizeScale * 100);
 
         drawCustomTextCanvas();
         setupCustomTextEvents();
@@ -2398,49 +2383,52 @@
         var rotationDeg = rotationEl ? parseFloat(rotationEl.value) : 0;
         var rotationRad = rotationDeg * Math.PI / 180;
 
-        // Padding from slider
+        // Font size = baseFontSize * sizeScale (slider controls scale, independent of padding)
+        var baseFontSize = canvas._baseFontSize || (ch * 0.05);
+        var effectiveFontSize = baseFontSize * customTextSizeScale;
+
+        // Padding: space around text only — does NOT affect font size
         var paddingPctVal = parseInt((document.getElementById('custom-text-padding') || {}).value) || 50;
-        var baseFontSize = canvas._fontSize || (ch * 0.05);
-        var textPadding = baseFontSize * (0.2 + paddingPctVal * 0.016);
+        var textPadding = effectiveFontSize * (0.2 + paddingPctVal * 0.016);
 
-        // Re-measure text with current value and padding
-        ctx.font = 'bold ' + baseFontSize + 'px sans-serif';
+        // Measure text and compute box dimensions
+        ctx.font = 'bold ' + effectiveFontSize + 'px sans-serif';
         var tm = ctx.measureText(textValue.toUpperCase());
-        var overlayW = tm.width + textPadding * 2;
-        var overlayH = baseFontSize + textPadding * 2;
+        var boxW = Math.max(20, tm.width + textPadding * 2);
+        var boxH = Math.max(20, effectiveFontSize * 1.4 + textPadding * 2);
 
-        var drawX = Math.round(customTextOverlayX);
-        var drawY = Math.round(customTextOverlayY);
-        var drawW = Math.max(10, Math.round(overlayW));
-        var drawH = Math.max(10, Math.round(overlayH));
+        // Update stored dimensions for hit-test
+        customTextOverlayW = boxW;
+        customTextOverlayH = boxH;
 
-        // Parse bg color for alpha version
+        // Clamp center so box stays fully visible on canvas
+        var halfW = boxW / 2;
+        var halfH = boxH / 2;
+        customTextCenterX = Math.max(halfW, Math.min(cw - halfW, customTextCenterX));
+        customTextCenterY = Math.max(halfH, Math.min(ch - halfH, customTextCenterY));
+
+        // Parse bg color for rgba
         var bgR = parseInt(bgColor.slice(1, 3), 16);
         var bgG = parseInt(bgColor.slice(3, 5), 16);
         var bgB = parseInt(bgColor.slice(5, 7), 16);
 
-        // Apply rotation around the center of the text box
-        var centerX = drawX + drawW / 2;
-        var centerY = drawY + drawH / 2;
-
         ctx.save();
-        ctx.translate(centerX, centerY);
+        ctx.translate(customTextCenterX, customTextCenterY);
         ctx.rotate(rotationRad);
 
-        // Semi-transparent bg fill with rounded rect (using user opacity)
+        // Background box
         ctx.fillStyle = 'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + bgOpacity + ')';
-        roundRect(ctx, -drawW / 2, -drawH / 2, drawW, drawH, 8);
+        roundRect(ctx, -halfW, -halfH, boxW, boxH, 8);
         ctx.fill();
 
-        // Border with bg color at full opacity
+        // Border
         ctx.strokeStyle = bgColor;
         ctx.lineWidth = 2;
-        roundRect(ctx, -drawW / 2, -drawH / 2, drawW, drawH, 8);
+        roundRect(ctx, -halfW, -halfH, boxW, boxH, 8);
         ctx.stroke();
 
-        // Draw text
-        var textFontSize = drawH * 0.6;
-        ctx.font = 'bold ' + textFontSize + 'px sans-serif';
+        // Text at effectiveFontSize — NOT derived from box height
+        ctx.font = 'bold ' + effectiveFontSize + 'px sans-serif';
         ctx.fillStyle = textColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -2450,12 +2438,9 @@
 
         // Update info
         var infoEl = document.getElementById('custom-text-info');
-        if (customTextBaseOverlayH > 0) {
-            var xPct = (((customTextOverlayX + customTextOverlayW / 2) / cw) * 100).toFixed(1);
-            var yPct = (((customTextOverlayY + customTextOverlayH / 2) / ch) * 100).toFixed(1);
-            var scalePct = Math.round((customTextOverlayH / customTextBaseOverlayH) * 100);
-            infoEl.textContent = 'x=' + xPct + '%  y=' + yPct + '%  size=' + scalePct + '%';
-        }
+        var xPct = ((customTextCenterX / cw) * 100).toFixed(1);
+        var yPct = ((customTextCenterY / ch) * 100).toFixed(1);
+        infoEl.textContent = 'x=' + xPct + '%  y=' + yPct + '%  size=' + Math.round(customTextSizeScale * 100) + '%';
     }
 
     function setupCustomTextEvents() {
@@ -2471,8 +2456,7 @@
         // Copy stored data
         newCanvas._cropSrc = canvas._cropSrc;
         newCanvas._textValue = canvas._textValue;
-        newCanvas._fontSize = canvas._fontSize;
-        newCanvas._textPadding = canvas._textPadding;
+        newCanvas._baseFontSize = canvas._baseFontSize;
 
         // Redraw
         drawCustomTextCanvas();
@@ -2510,33 +2494,31 @@
 
     function onCustomTextMouseDown(e) {
         var pos = getCustomTextCanvasCoords(e);
-        if (pos.x >= customTextOverlayX && pos.x <= customTextOverlayX + customTextOverlayW &&
-            pos.y >= customTextOverlayY && pos.y <= customTextOverlayY + customTextOverlayH) {
+        var halfW = customTextOverlayW / 2;
+        var halfH = customTextOverlayH / 2;
+        if (pos.x >= customTextCenterX - halfW && pos.x <= customTextCenterX + halfW &&
+            pos.y >= customTextCenterY - halfH && pos.y <= customTextCenterY + halfH) {
             customTextDragging = true;
             customTextDragOffset = {
-                x: pos.x - customTextOverlayX,
-                y: pos.y - customTextOverlayY
+                x: pos.x - customTextCenterX,
+                y: pos.y - customTextCenterY
             };
         }
     }
 
     function onCustomTextMouseMove(e) {
         var canvas = document.getElementById('custom-text-canvas');
+        var pos = getCustomTextCanvasCoords(e);
         if (customTextDragging) {
-            var pos = getCustomTextCanvasCoords(e);
-            var nx = pos.x - customTextDragOffset.x;
-            var ny = pos.y - customTextDragOffset.y;
-            // Clamp within canvas
-            nx = Math.max(0, Math.min(nx, canvas.width - customTextOverlayW));
-            ny = Math.max(0, Math.min(ny, canvas.height - customTextOverlayH));
-            customTextOverlayX = nx;
-            customTextOverlayY = ny;
+            customTextCenterX = pos.x - customTextDragOffset.x;
+            customTextCenterY = pos.y - customTextDragOffset.y;
+            // Clamping is handled inside drawCustomTextCanvas
             drawCustomTextCanvas();
         } else {
-            // Update cursor based on hover
-            var pos = getCustomTextCanvasCoords(e);
-            if (pos.x >= customTextOverlayX && pos.x <= customTextOverlayX + customTextOverlayW &&
-                pos.y >= customTextOverlayY && pos.y <= customTextOverlayY + customTextOverlayH) {
+            var halfW = customTextOverlayW / 2;
+            var halfH = customTextOverlayH / 2;
+            if (pos.x >= customTextCenterX - halfW && pos.x <= customTextCenterX + halfW &&
+                pos.y >= customTextCenterY - halfH && pos.y <= customTextCenterY + halfH) {
                 canvas.style.cursor = 'grab';
             } else {
                 canvas.style.cursor = 'default';
@@ -2549,45 +2531,16 @@
     }
 
     window.onCustomTextSizeSlider = function(val) {
-        var canvas = document.getElementById('custom-text-canvas');
-        if (!canvas || customTextBaseOverlayH <= 0) return;
-        var scale = parseInt(val) / 100;
-        var newH = customTextBaseOverlayH * scale;
-        var newW = customTextBaseOverlayW * scale;
-        // Keep center point stable
-        var cx = customTextOverlayX + customTextOverlayW / 2;
-        var cy = customTextOverlayY + customTextOverlayH / 2;
-        customTextOverlayX = cx - newW / 2;
-        customTextOverlayY = cy - newH / 2;
-        customTextOverlayW = newW;
-        customTextOverlayH = newH;
-        // Clamp so overlay stays visible on canvas
-        clampCustomTextOverlayToCanvas();
+        customTextSizeScale = parseInt(val) / 100;
         drawCustomTextCanvas();
     };
-
-    function clampCustomTextOverlayToCanvas() {
-        var canvas = document.getElementById('custom-text-canvas');
-        if (!canvas) return;
-        var cw = canvas.width;
-        var ch = canvas.height;
-        if (customTextOverlayW > cw) {
-            customTextOverlayW = cw;
-        }
-        if (customTextOverlayH > ch) {
-            customTextOverlayH = ch;
-        }
-        customTextOverlayX = Math.max(0, Math.min(customTextOverlayX, cw - customTextOverlayW));
-        customTextOverlayY = Math.max(0, Math.min(customTextOverlayY, ch - customTextOverlayH));
-    }
 
     window.resetCustomTextPosition = function() {
         var canvas = document.getElementById('custom-text-canvas');
         if (!canvas) return;
-        customTextOverlayW = customTextBaseOverlayW;
-        customTextOverlayH = customTextBaseOverlayH;
-        customTextOverlayX = (canvas.width - customTextOverlayW) / 2;
-        customTextOverlayY = canvas.height * 0.6;
+        customTextSizeScale = 1.0;
+        customTextCenterX = canvas.width / 2;
+        customTextCenterY = canvas.height * 0.6;
         document.getElementById('custom-text-size-slider').value = 100;
         drawCustomTextCanvas();
     };
@@ -2597,11 +2550,12 @@
         if (!canvas) return;
         var cw = canvas.width;
         var ch = canvas.height;
-        var fontSize = canvas._fontSize || (ch * 0.05);
+        var baseFontSize = canvas._baseFontSize || (ch * 0.05);
+        var effectiveFontSize = baseFontSize * customTextSizeScale;
         customTextPosition = {
-            x_pct: parseFloat((((customTextOverlayX + customTextOverlayW / 2) / cw) * 100).toFixed(1)),
-            y_pct: parseFloat((((customTextOverlayY + customTextOverlayH / 2) / ch) * 100).toFixed(1)),
-            fontsize_pct: parseFloat(((fontSize * (customTextOverlayH / customTextBaseOverlayH)) / ch * 100).toFixed(2))
+            x_pct: parseFloat(((customTextCenterX / cw) * 100).toFixed(1)),
+            y_pct: parseFloat(((customTextCenterY / ch) * 100).toFixed(1)),
+            fontsize_pct: parseFloat(((effectiveFontSize / ch) * 100).toFixed(2))
         };
 
         // Save per-clip custom text data
