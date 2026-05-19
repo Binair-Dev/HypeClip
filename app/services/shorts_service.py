@@ -142,9 +142,8 @@ def _build_ffmpeg_command(
     if custom_overlay:
         overlay_img = custom_overlay.get("image_path")
         if overlay_img and Path(overlay_img).exists():
-            cmd.insert(2, "-i")
-            cmd.insert(3, overlay_img)
-            # Input index for custom image: 1 (0 is video)
+            # Add custom image as second input AFTER the video (input index 1)
+            cmd.extend(["-i", overlay_img])
             pos = custom_overlay.get("position", {})
             height_pct = float(pos.get("height_pct", 10.0))
             rotation = float(pos.get("rotation", 0))
@@ -158,6 +157,7 @@ def _build_ffmpeg_command(
             rot_rad = rotation * math.pi / 180
 
             # Scale image to target height, keep aspect ratio
+            # Input 1 is the custom image (added after video which is input 0)
             filters.append(
                 f"[1:v]scale=-2:{img_h},format=rgba[custom_scaled]"
             )
