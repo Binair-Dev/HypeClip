@@ -13,6 +13,7 @@ import logging
 import math
 import os
 import subprocess
+import tempfile
 import threading
 import uuid
 from pathlib import Path
@@ -186,14 +187,23 @@ def _build_ffmpeg_command(
             video_label = "video_with_overlay"
 
     # 5. Custom text box overlay
+    cleanup_files = []
     if custom_text:
         text_value = custom_text.get("text", "")
         if text_value.strip():
             font = _font_path()
-            safe_text = text_value.upper().replace("'", "'\\''")
-            text_color = custom_text.get("text_color", "ffffff")
-            bg_color = custom_text.get("bg_color", "000000")
+            # Strip leading '#' from colors sent by HTML color pickers
+            text_color = custom_text.get("text_color", "ffffff").lstrip('#')
+            bg_color = custom_text.get("bg_color", "000000").lstrip('#')
             pos = custom_text.get("position", {})
+
+            # Opacity: 0-100 from frontend → 0.0-1.0 for FFmpeg
+            opacity_pct = int(custom_text.get("opacity", 85))
+            bg_opacity = max(0.0, min(1.0, opacity_pct / 100.0))
+
+            # Rotation: degrees from frontend → radians for FFmpeg angle param
+            rotation_deg = float(custom_text.get("rotation", 0))
+            rotation_rad = rotation_deg * math.pi / 180.0
 
             fontsize_pct = float(pos.get("fontsize_pct", 3.0))
             fontsize = max(20, round(1920 * fontsize_pct / 100))
@@ -206,32 +216,44 @@ def _build_ffmpeg_command(
                 x_expr = "(w-text_w)/2"
                 y_expr = "(h-text_h)/2"
 
-            # Background box: drawbox with rounded corners isn't native in FFmpeg,
-            # so we use a two-step approach:
-            # 1. drawbox for the background rectangle (with some padding via borderw trick)
-            # 2. drawtext for the actual text
-            # We approximate rounded corners using box borderw as padding
-            padding = round(fontsize * 0.4)
+            # Padding: base vertical padding + extra horizontal padding
+            padding_v = round(fontsize * 0.4)
+            # Extra horizontal padding (task requirement: more breathing room)
+            padding_h = round(fontsize * 0.55)
+            # boxborderw applies uniformly; we use the larger of v/h for the box
+            padding = max(padding_v, padding_h)
 
-            # drawbox: x/y positioned relative to text position (use text metrics)
-            # We need the box to match text dimensions. drawbox can use text_w/text_h
-            # but only in drawtext filter, not in drawbox.
-            # Solution: combine drawtext with box=1 and boxborderw for padding
-            text_filter = (
-                f"[{video_label}]drawtext="
-                f"text='{safe_text}':"
-                f"fontfile={font}:"
-                f"fontsize={fontsize}:"
-                f"fontcolor=0x{text_color}:"
-                f"box=1:"
-                f"boxcolor=0x{bg_color}@0.85:"
-                f"boxborderw={padding}:"
-                f"borderw=2:"
-                f"bordercolor=0x{bg_color}:"
-                f"x={x_expr}:"
-                f"y={y_expr}"
-                f"[video_with_ctext]"
+            # Write text to a temp file to avoid all shell-escaping issues
+            text_file = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.txt', delete=False, prefix='hypeclip_ctext_'
             )
+            text_file.write(text_value.upper())
+            text_file.close()
+            cleanup_files.append(text_file.name)
+
+            # Build drawtext filter using textfile= instead of text=
+            drawtext_parts = [
+                f"[{video_label}]drawtext=",
+                f"textfile='{text_file.name}'",
+                f":fontfile={font}",
+                f":fontsize={fontsize}",
+                f":fontcolor=0x{text_color}",
+                f":box=1",
+                f":boxcolor=0x{bg_color}@{bg_opacity:.2f}",
+                f":boxborderw={padding}",
+                f":borderw=2",
+                f":bordercolor=0x{bg_color}",
+                f":x={x_expr}",
+                f":y={y_expr}",
+            ]
+
+            # Add rotation via angle param (FFmpeg 5.0+, radians)
+            if abs(rotation_deg) > 0.1:
+                drawtext_parts.append(f":angle={rotation_rad:.6f}")
+
+            drawtext_parts.append(f"[video_with_ctext]")
+
+            text_filter = "".join(drawtext_parts)
             filters.append(text_filter)
             video_label = "video_with_ctext"
 
@@ -252,7 +274,7 @@ def _build_ffmpeg_command(
     ])
 
     cmd.append(output_path)
-    return cmd
+    return cmd, cleanup_files
 
 
 # ---------------------------------------------------------------------------
@@ -291,8 +313,9 @@ class ShortsService:
             "webcam": bool(options.get("webcam", False)),
             "streamer_name": bool(options.get("streamer_name", False)),
             "name_position": options.get("name_position"),
+            "custom_text": options.get("custom_text"),
         }
-        log.info("Generate options: streamer_name=%s, name_position=%s", opts["streamer_name"], opts["name_position"])
+        log.info("Generate options: streamer_name=%s, name_position=%s, custom_text=%s", opts["streamer_name"], opts["name_position"], bool(opts["custom_text"]))
 
         # Initialise progress
         progress_data = {
@@ -498,7 +521,7 @@ class ShortsService:
         streamer_name = clip.get("broadcaster_name") if options.get("streamer_name") else None
 
         output_path = session_dir / f"{slug}_short.mp4"
-        cmd = _build_ffmpeg_command(
+        cmd, cleanup_files = _build_ffmpeg_command(
             input_path=str(clip_path),
             output_path=str(output_path),
             webcam_region=webcam_region,
@@ -518,6 +541,13 @@ class ShortsService:
             stderr=subprocess.PIPE,
             text=True,
         )
+
+        # Clean up temp files (e.g. text file for drawtext)
+        for tmp_path in cleanup_files:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
         if result.returncode != 0:
             log.error("FFmpeg failed for %s:\n%s", slug, result.stderr)

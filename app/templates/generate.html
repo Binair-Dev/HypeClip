@@ -156,6 +156,18 @@
                         <span class="text-gray-400 text-xs">BG</span>
                         <input type="color" id="custom-text-bg-color" value="#000000" class="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
                     </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-400 text-xs">Opacity</span>
+                        <input type="range" id="custom-text-opacity" min="0" max="100" value="85"
+                            class="w-16 h-1.5 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
+                        <span id="custom-text-opacity-val" class="text-gray-400 text-xs w-8">85%</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-400 text-xs">Rotation</span>
+                        <input type="range" id="custom-text-rotation" min="-180" max="180" value="0"
+                            class="w-16 h-1.5 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
+                        <span id="custom-text-rotation-val" class="text-gray-400 text-xs w-8">0°</span>
+                    </div>
                     <button id="btn-position-custom-text" onclick="openCustomTextModal()"
                         class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">
                         <i class="fas fa-arrows-up-down-left-right mr-1"></i>Position Text
@@ -597,6 +609,18 @@
         } else {
             row.classList.add('hidden');
         }
+    });
+
+    // Custom text opacity slider → update display
+    document.getElementById('custom-text-opacity').addEventListener('input', function() {
+        document.getElementById('custom-text-opacity-val').textContent = this.value + '%';
+        drawCustomTextCanvas();
+    });
+
+    // Custom text rotation slider → update display
+    document.getElementById('custom-text-rotation').addEventListener('input', function() {
+        document.getElementById('custom-text-rotation-val').textContent = this.value + '°';
+        drawCustomTextCanvas();
     });
 
     // Custom overlay file upload handler
@@ -2319,6 +2343,11 @@
         var textValue = canvas._textValue || 'TEXT';
         var textColor = document.getElementById('custom-text-color').value || '#ffffff';
         var bgColor = document.getElementById('custom-text-bg-color').value || '#000000';
+        var bgOpacityEl = document.getElementById('custom-text-opacity');
+        var bgOpacity = bgOpacityEl ? parseInt(bgOpacityEl.value) / 100 : 0.85;
+        var rotationEl = document.getElementById('custom-text-rotation');
+        var rotationDeg = rotationEl ? parseFloat(rotationEl.value) : 0;
+        var rotationRad = rotationDeg * Math.PI / 180;
 
         var drawX = Math.round(customTextOverlayX);
         var drawY = Math.round(customTextOverlayY);
@@ -2330,15 +2359,23 @@
         var bgG = parseInt(bgColor.slice(3, 5), 16);
         var bgB = parseInt(bgColor.slice(5, 7), 16);
 
-        // Semi-transparent bg fill with rounded rect
-        ctx.fillStyle = 'rgba(' + bgR + ',' + bgG + ',' + bgB + ',0.6)';
-        roundRect(ctx, drawX, drawY, drawW, drawH, 8);
+        // Apply rotation around the center of the text box
+        var centerX = drawX + drawW / 2;
+        var centerY = drawY + drawH / 2;
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(rotationRad);
+
+        // Semi-transparent bg fill with rounded rect (using user opacity)
+        ctx.fillStyle = 'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + bgOpacity + ')';
+        roundRect(ctx, -drawW / 2, -drawH / 2, drawW, drawH, 8);
         ctx.fill();
 
         // Border with bg color at full opacity
         ctx.strokeStyle = bgColor;
         ctx.lineWidth = 2;
-        roundRect(ctx, drawX, drawY, drawW, drawH, 8);
+        roundRect(ctx, -drawW / 2, -drawH / 2, drawW, drawH, 8);
         ctx.stroke();
 
         // Draw text
@@ -2347,7 +2384,9 @@
         ctx.fillStyle = textColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(textValue.toUpperCase(), drawX + drawW / 2, drawY + drawH / 2);
+        ctx.fillText(textValue.toUpperCase(), 0, 0);
+
+        ctx.restore();
 
         // Update info
         var infoEl = document.getElementById('custom-text-info');
@@ -2570,6 +2609,8 @@
                             text: document.getElementById('custom-text-input').value,
                             text_color: document.getElementById('custom-text-color').value,
                             bg_color: document.getElementById('custom-text-bg-color').value,
+                            opacity: parseInt(document.getElementById('custom-text-opacity').value),
+                            rotation: parseInt(document.getElementById('custom-text-rotation').value),
                             position: customTextPosition
                         } : null
                     }
