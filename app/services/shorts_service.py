@@ -349,9 +349,8 @@ class ShortsService:
             "webcam": bool(options.get("webcam", False)),
             "streamer_name": bool(options.get("streamer_name", False)),
             "name_position": options.get("name_position"),
-            "custom_text": options.get("custom_text"),
         }
-        log.info("Generate options: streamer_name=%s, name_position=%s, custom_text=%s", opts["streamer_name"], opts["name_position"], bool(opts["custom_text"]))
+        log.info("Generate options: streamer_name=%s, name_position=%s", opts["streamer_name"], opts["name_position"])
 
         # Initialise progress
         progress_data = {
@@ -565,7 +564,7 @@ class ShortsService:
             streamer_name=streamer_name,
             name_position=options.get("name_position"),
             custom_overlay=custom_overlay,
-            custom_text=options.get("custom_text"),
+            custom_text=clip.get("custom_text") or options.get("custom_text"),
         )
 
         self._update_clip_status(session_id, slug, "processing", 65)

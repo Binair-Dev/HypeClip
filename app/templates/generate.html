@@ -131,30 +131,7 @@
             <!-- Divider -->
             <div class="border-t border-white/5"></div>
 
-            <!-- Custom Text toggle -->
-            <div class="flex items-center justify-between">
-                <div>
-                    <div class="text-white font-medium">Custom Text</div>
-                    <div class="text-gray-500 text-sm">Add custom text overlay on the Short</div>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="opt-custom-text" class="sr-only peer" />
-                    <div class="w-11 h-6 bg-dark-500 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/50 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-                </label>
-            </div>
-
-            <!-- Custom Text inputs & position button (shown when opt-custom-text is checked) -->
-            <div id="custom-text-row" class="hidden pl-4">
-                <div class="flex items-center gap-3 flex-wrap">
-                    <input type="text" id="custom-text-input" placeholder="Enter custom text..."
-                        class="flex-1 min-w-[150px] px-3 py-1.5 text-sm rounded-lg bg-dark-600 text-white border border-white/10 focus:border-accent focus:outline-none" />
-                    <button id="btn-position-custom-text" onclick="openCustomTextModal()"
-                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">
-                        <i class="fas fa-arrows-up-down-left-right mr-1"></i>Position Text
-                        <span id="custom-text-position-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
-                    </button>
-                </div>
-            </div>
+            <!-- Custom Text is now per-clip — use the ✏️ button on each clip card -->
         </div>
     </div>
 
@@ -393,8 +370,10 @@
 
     <!-- Bottom bar -->
     <div class="px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
-        <!-- Row 1: Color pickers + Opacity + Rotation -->
+        <!-- Row 1: Text input + Color pickers + Opacity + Rotation -->
         <div class="flex items-center gap-4 mb-2 flex-wrap">
+            <input type="text" id="custom-text-input" placeholder="Enter custom text..."
+                class="flex-1 min-w-[150px] max-w-[250px] px-3 py-1.5 text-sm rounded-lg bg-dark-600 text-white border border-white/10 focus:border-accent focus:outline-none" />
             <div class="flex items-center gap-1.5">
                 <span class="text-gray-400 text-xs">Text</span>
                 <input type="color" id="custom-text-color" value="#ffffff" class="w-7 h-7 rounded cursor-pointer bg-transparent border-0" />
@@ -510,6 +489,8 @@
 
     // Custom text overlay state
     let customTextPosition = null; // { x_pct, y_pct, fontsize_pct }
+    let currentCustomTextClipIndex = null; // which clip is being edited
+    let clipsCustomText = {}; // keyed by clip index: { 0: { text, text_color, bg_color, opacity, rotation, padding, position }, ... }
     let customTextOverlayX = 0;
     let customTextOverlayY = 0;
     let customTextOverlayW = 0;
@@ -574,6 +555,9 @@
                         <i class="fas fa-clock mr-1"></i>${mm}:${ss}
                     </div>
                 </div>
+                <button onclick="openCustomTextModal(${i})" class="${clipsCustomText[i] && clipsCustomText[i].text ? 'text-green-400' : 'text-gray-500'} hover:text-accent transition-colors p-1" title="Custom Text">
+                    <i class="fas fa-font text-sm"></i>
+                </button>
                 <button onclick="removeClip(${i})" class="text-gray-500 hover:text-red-400 transition-colors p-1" title="Remove">
                     <i class="fas fa-trash-can text-sm"></i>
                 </button>
@@ -606,16 +590,6 @@
     // Custom overlay toggle → show/hide upload & position buttons
     document.getElementById('opt-custom-overlay').addEventListener('change', function() {
         var row = document.getElementById('custom-overlay-row');
-        if (this.checked) {
-            row.classList.remove('hidden');
-        } else {
-            row.classList.add('hidden');
-        }
-    });
-
-    // Custom text toggle → show/hide inputs & position button
-    document.getElementById('opt-custom-text').addEventListener('change', function() {
-        var row = document.getElementById('custom-text-row');
         if (this.checked) {
             row.classList.remove('hidden');
         } else {
@@ -672,6 +646,20 @@
     window.removeClip = function(index) {
         clips.splice(index, 1);
         sessionStorage.setItem('selected_clips', JSON.stringify(clips));
+
+        // Shift clipsCustomText keys after removal
+        var newCustomText = {};
+        Object.keys(clipsCustomText).forEach(function(key) {
+            var k = parseInt(key);
+            if (k < index) {
+                newCustomText[k] = clipsCustomText[k];
+            } else if (k > index) {
+                newCustomText[k - 1] = clipsCustomText[k];
+            }
+            // k === index: skip (removed)
+        });
+        clipsCustomText = newCustomText;
+
         renderClipList();
 
         if (clips.length === 0) {
@@ -2162,40 +2150,69 @@
         imgDragging = false;
     };
 
-    // ---- Custom Text Overlay Modal ----
-    window.openCustomTextModal = async function() {
-        var textValue = document.getElementById('custom-text-input').value.trim();
-        if (!textValue) {
-            alert('Please enter some text first.');
-            return;
+    // ---- Custom Text Overlay Modal (per-clip) ----
+    window.openCustomTextModal = async function(clipIndex) {
+        if (clips.length === 0 || clipIndex === undefined) return;
+
+        currentCustomTextClipIndex = clipIndex;
+
+        // Load saved data for this clip, or set defaults
+        var saved = clipsCustomText[clipIndex];
+        if (saved) {
+            document.getElementById('custom-text-input').value = saved.text || '';
+            document.getElementById('custom-text-color').value = saved.text_color || '#ffffff';
+            document.getElementById('custom-text-bg-color').value = saved.bg_color || '#000000';
+            document.getElementById('custom-text-opacity').value = saved.opacity !== undefined ? saved.opacity : 85;
+            document.getElementById('custom-text-rotation').value = saved.rotation !== undefined ? saved.rotation : 0;
+            document.getElementById('custom-text-padding').value = saved.padding !== undefined ? saved.padding : 50;
+            // Update display values
+            document.getElementById('custom-text-opacity-val').textContent = (saved.opacity !== undefined ? saved.opacity : 85) + '%';
+            document.getElementById('custom-text-rotation-val').textContent = (saved.rotation !== undefined ? saved.rotation : 0) + '°';
+            document.getElementById('custom-text-padding-val').textContent = (saved.padding !== undefined ? saved.padding : 50) + '%';
+            // Restore position if previously set
+            if (saved.position) {
+                customTextPosition = saved.position;
+            } else {
+                customTextPosition = null;
+            }
+        } else {
+            document.getElementById('custom-text-input').value = '';
+            document.getElementById('custom-text-color').value = '#ffffff';
+            document.getElementById('custom-text-bg-color').value = '#000000';
+            document.getElementById('custom-text-opacity').value = 85;
+            document.getElementById('custom-text-rotation').value = 0;
+            document.getElementById('custom-text-padding').value = 50;
+            document.getElementById('custom-text-opacity-val').textContent = '85%';
+            document.getElementById('custom-text-rotation-val').textContent = '0°';
+            document.getElementById('custom-text-padding-val').textContent = '50%';
+            customTextPosition = null;
         }
-        if (clips.length === 0) return;
 
         var modal = document.getElementById('custom-text-modal');
         modal.classList.remove('hidden');
 
-        // Load frame from first clip if not already loaded
-        if (!frameImage) {
-            var slug = clips[0].slug;
-            try {
-                var img = new Image();
-                img.crossOrigin = 'anonymous';
-                await new Promise(function(resolve, reject) {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                    img.src = '/api/frame/' + slug + '?t=' + Date.now();
-                });
-                frameImage = img;
-                frameNaturalW = img.naturalWidth;
-                frameNaturalH = img.naturalHeight;
-            } catch(err) {
-                console.error('Failed to load frame for custom text modal:', err);
-                alert('Failed to load clip frame. Please try again.');
-                closeCustomTextModal();
-                return;
-            }
+        // Load frame from the clip's own thumbnail slug, fallback to first clip
+        var slug = clips[clipIndex] ? clips[clipIndex].slug : clips[0].slug;
+        frameImage = null; // reload frame for this clip
+        try {
+            var img = new Image();
+            img.crossOrigin = 'anonymous';
+            await new Promise(function(resolve, reject) {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = '/api/frame/' + slug + '?t=' + Date.now();
+            });
+            frameImage = img;
+            frameNaturalW = img.naturalWidth;
+            frameNaturalH = img.naturalHeight;
+        } catch(err) {
+            console.error('Failed to load frame for custom text modal:', err);
+            alert('Failed to load clip frame. Please try again.');
+            closeCustomTextModal();
+            return;
         }
 
+        var textValue = document.getElementById('custom-text-input').value;
         requestAnimationFrame(function() {
             setupCustomTextCanvas(textValue);
         });
@@ -2570,9 +2587,29 @@
             y_pct: parseFloat((((customTextOverlayY + customTextOverlayH / 2) / ch) * 100).toFixed(1)),
             fontsize_pct: parseFloat(((fontSize * (customTextOverlayH / customTextBaseOverlayH)) / ch * 100).toFixed(2))
         };
+
+        // Save per-clip custom text data
+        if (currentCustomTextClipIndex !== null) {
+            var textVal = document.getElementById('custom-text-input').value.trim();
+            if (textVal) {
+                clipsCustomText[currentCustomTextClipIndex] = {
+                    text: textVal,
+                    text_color: document.getElementById('custom-text-color').value,
+                    bg_color: document.getElementById('custom-text-bg-color').value,
+                    opacity: parseInt(document.getElementById('custom-text-opacity').value),
+                    rotation: parseInt(document.getElementById('custom-text-rotation').value),
+                    padding: parseInt(document.getElementById('custom-text-padding').value),
+                    position: customTextPosition
+                };
+            } else {
+                // No text entered — clear custom text for this clip
+                delete clipsCustomText[currentCustomTextClipIndex];
+            }
+        }
+
         closeCustomTextModal();
-        // Show green check on button
-        document.getElementById('custom-text-position-status').classList.remove('hidden');
+        // Re-render clip list to update the button indicator color
+        renderClipList();
     };
 
     window.closeCustomTextModal = function() {
@@ -2592,9 +2629,8 @@
         const webcam = document.getElementById('opt-webcam').checked;
         const showName = document.getElementById('opt-name').checked;
         const useCustomOverlay = document.getElementById('opt-custom-overlay').checked;
-        const useCustomText = document.getElementById('opt-custom-text').checked;
 
-        // Build clips payload with webcam regions + positions
+        // Build clips payload with webcam regions + positions + per-clip custom text
         const clipsPayload = clips.map(function(clip, i) {
             var payload = {
                 slug: clip.slug,
@@ -2614,6 +2650,19 @@
                     position: customImagePosition
                 };
             }
+            // Per-clip custom text
+            var ctData = clipsCustomText[i];
+            if (ctData && ctData.text && ctData.text.trim() && ctData.position) {
+                payload.custom_text = {
+                    text: ctData.text,
+                    text_color: ctData.text_color,
+                    bg_color: ctData.bg_color,
+                    opacity: ctData.opacity,
+                    rotation: ctData.rotation,
+                    padding: ctData.padding,
+                    position: ctData.position
+                };
+            }
             return payload;
         });
 
@@ -2631,14 +2680,6 @@
                         name_position: namePosition,
                         custom_overlay: useCustomOverlay && customImageSrc && customImagePosition ? {
                             position: customImagePosition
-                        } : null,
-                        custom_text: useCustomText && customTextPosition ? {
-                            text: document.getElementById('custom-text-input').value,
-                            text_color: document.getElementById('custom-text-color').value,
-                            bg_color: document.getElementById('custom-text-bg-color').value,
-                            opacity: parseInt(document.getElementById('custom-text-opacity').value),
-                            rotation: parseInt(document.getElementById('custom-text-rotation').value),
-                            position: customTextPosition
                         } : null
                     }
                 })
