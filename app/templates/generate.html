@@ -148,26 +148,6 @@
                 <div class="flex items-center gap-3 flex-wrap">
                     <input type="text" id="custom-text-input" placeholder="Enter custom text..."
                         class="flex-1 min-w-[150px] px-3 py-1.5 text-sm rounded-lg bg-dark-600 text-white border border-white/10 focus:border-accent focus:outline-none" />
-                    <div class="flex items-center gap-2">
-                        <span class="text-gray-400 text-xs">Text</span>
-                        <input type="color" id="custom-text-color" value="#ffffff" class="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-gray-400 text-xs">BG</span>
-                        <input type="color" id="custom-text-bg-color" value="#000000" class="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-gray-400 text-xs">Opacity</span>
-                        <input type="range" id="custom-text-opacity" min="0" max="100" value="85"
-                            class="w-16 h-1.5 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
-                        <span id="custom-text-opacity-val" class="text-gray-400 text-xs w-8">85%</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-gray-400 text-xs">Rotation</span>
-                        <input type="range" id="custom-text-rotation" min="-180" max="180" value="0"
-                            class="w-16 h-1.5 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
-                        <span id="custom-text-rotation-val" class="text-gray-400 text-xs w-8">0°</span>
-                    </div>
                     <button id="btn-position-custom-text" onclick="openCustomTextModal()"
                         class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">
                         <i class="fas fa-arrows-up-down-left-right mr-1"></i>Position Text
@@ -412,24 +392,50 @@
     </div>
 
     <!-- Bottom bar -->
-    <div class="flex items-center justify-between px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
-        <div class="flex items-center gap-4">
-            <div id="custom-text-info" class="text-gray-500 text-xs font-mono"></div>
-            <div class="flex items-center gap-2">
-                <span class="text-gray-500 text-xs"><i class="fas fa-minimize"></i></span>
-                <input type="range" id="custom-text-size-slider" min="30" max="250" value="100"
-                       class="w-24 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
-                       oninput="onCustomTextSizeSlider(this.value)">
-                <span class="text-gray-500 text-xs"><i class="fas fa-maximize"></i></span>
+    <div class="px-5 py-3 bg-dark-900/90 border-t border-white/5 flex-shrink-0">
+        <!-- Row 1: Color pickers + Opacity + Rotation -->
+        <div class="flex items-center gap-4 mb-2 flex-wrap">
+            <div class="flex items-center gap-1.5">
+                <span class="text-gray-400 text-xs">Text</span>
+                <input type="color" id="custom-text-color" value="#ffffff" class="w-7 h-7 rounded cursor-pointer bg-transparent border-0" />
+            </div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-gray-400 text-xs">BG</span>
+                <input type="color" id="custom-text-bg-color" value="#000000" class="w-7 h-7 rounded cursor-pointer bg-transparent border-0" />
+            </div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-gray-400 text-xs">Opacity</span>
+                <input type="range" id="custom-text-opacity" min="0" max="100" value="85"
+                    class="w-16 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
+                <span id="custom-text-opacity-val" class="text-gray-400 text-xs w-8">85%</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-gray-400 text-xs">Rotation</span>
+                <input type="range" id="custom-text-rotation" min="-180" max="180" value="0"
+                    class="w-16 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer" />
+                <span id="custom-text-rotation-val" class="text-gray-400 text-xs w-8">0°</span>
             </div>
         </div>
-        <div class="flex gap-3">
-            <button onclick="resetCustomTextPosition()" class="px-5 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
-                <i class="fas fa-rotate-left mr-1"></i> Reset
-            </button>
-            <button onclick="confirmCustomTextPosition()" class="px-6 py-2.5 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg transition-colors">
-                <i class="fas fa-check mr-1"></i> Confirm Position
-            </button>
+        <!-- Row 2: Size slider + info + buttons -->
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div id="custom-text-info" class="text-gray-500 text-xs font-mono"></div>
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-500 text-xs"><i class="fas fa-minimize"></i></span>
+                    <input type="range" id="custom-text-size-slider" min="30" max="250" value="100"
+                           class="w-24 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
+                           oninput="onCustomTextSizeSlider(this.value)">
+                    <span class="text-gray-500 text-xs"><i class="fas fa-maximize"></i></span>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="resetCustomTextPosition()" class="px-5 py-2.5 bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm rounded-lg transition-colors">
+                    <i class="fas fa-rotate-left mr-1"></i> Reset
+                </button>
+                <button onclick="confirmCustomTextPosition()" class="px-6 py-2.5 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-lg transition-colors">
+                    <i class="fas fa-check mr-1"></i> Confirm Position
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -620,6 +626,14 @@
     // Custom text rotation slider → update display
     document.getElementById('custom-text-rotation').addEventListener('input', function() {
         document.getElementById('custom-text-rotation-val').textContent = this.value + '°';
+        drawCustomTextCanvas();
+    });
+
+    // Custom text color pickers → redraw canvas on change
+    document.getElementById('custom-text-color').addEventListener('input', function() {
+        drawCustomTextCanvas();
+    });
+    document.getElementById('custom-text-bg-color').addEventListener('input', function() {
         drawCustomTextCanvas();
     });
 

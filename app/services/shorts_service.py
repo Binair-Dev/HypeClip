@@ -201,9 +201,8 @@ def _build_ffmpeg_command(
             opacity_pct = int(custom_text.get("opacity", 85))
             bg_opacity = max(0.0, min(1.0, opacity_pct / 100.0))
 
-            # Rotation: degrees from frontend → radians for FFmpeg angle param
+            # Rotation: degrees from frontend
             rotation_deg = float(custom_text.get("rotation", 0))
-            rotation_rad = rotation_deg * math.pi / 180.0
 
             fontsize_pct = float(pos.get("fontsize_pct", 3.0))
             fontsize = max(20, round(1920 * fontsize_pct / 100))
@@ -216,12 +215,8 @@ def _build_ffmpeg_command(
                 x_expr = "(w-text_w)/2"
                 y_expr = "(h-text_h)/2"
 
-            # Padding: base vertical padding + extra horizontal padding
-            padding_v = round(fontsize * 0.4)
-            # Extra horizontal padding (task requirement: more breathing room)
-            padding_h = round(fontsize * 0.55)
-            # boxborderw applies uniformly; we use the larger of v/h for the box
-            padding = max(padding_v, padding_h)
+            # Padding: generous padding so text doesn't touch the border
+            padding = round(fontsize * 0.7)
 
             # Write text to a temp file to avoid all shell-escaping issues
             text_file = tempfile.NamedTemporaryFile(
@@ -231,31 +226,71 @@ def _build_ffmpeg_command(
             text_file.close()
             cleanup_files.append(text_file.name)
 
-            # Build drawtext filter using textfile= instead of text=
-            drawtext_parts = [
-                f"[{video_label}]drawtext=",
-                f"textfile='{text_file.name}'",
-                f":fontfile={font}",
-                f":fontsize={fontsize}",
-                f":fontcolor=0x{text_color}",
-                f":box=1",
-                f":boxcolor=0x{bg_color}@{bg_opacity:.2f}",
-                f":boxborderw={padding}",
-                f":borderw=2",
-                f":bordercolor=0x{bg_color}",
-                f":x={x_expr}",
-                f":y={y_expr}",
-            ]
+            if abs(rotation_deg) < 0.1:
+                # Simple path: no rotation — drawtext directly on video
+                text_filter = (
+                    f"[{video_label}]drawtext="
+                    f"textfile='{text_file.name}':"
+                    f"fontfile={font}:"
+                    f"fontsize={fontsize}:"
+                    f"fontcolor=0x{text_color}:"
+                    f"box=1:"
+                    f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
+                    f"boxborderw={padding}:"
+                    f"borderw=2:"
+                    f"bordercolor=0x{bg_color}:"
+                    f"x={x_expr}:"
+                    f"y={y_expr}"
+                    f"[video_with_ctext]"
+                )
+                filters.append(text_filter)
+                video_label = "video_with_ctext"
+            else:
+                # Complex path: use color source + drawtext + rotate + overlay
+                rotation_rad = rotation_deg * math.pi / 180.0
 
-            # Add rotation via angle param (FFmpeg 5.0+, radians)
-            if abs(rotation_deg) > 0.1:
-                drawtext_parts.append(f":angle={rotation_rad:.6f}")
+                # Estimate canvas size for text
+                text_len = len(text_value.upper())
+                canvas_w = int(fontsize * 0.65 * text_len) + padding * 4
+                canvas_h = int(fontsize * 1.5) + padding * 4
+                canvas_w = max(canvas_w, 200)
+                canvas_h = max(canvas_h, 100)
 
-            drawtext_parts.append(f"[video_with_ctext]")
+                # 1. Create transparent canvas + draw text centered
+                ct_filters = (
+                    f"color=c=0x00000000@s={canvas_w}x{canvas_h},"
+                    f"drawtext="
+                    f"textfile='{text_file.name}':"
+                    f"fontfile={font}:"
+                    f"fontsize={fontsize}:"
+                    f"fontcolor=0x{text_color}:"
+                    f"box=1:"
+                    f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
+                    f"boxborderw={padding}:"
+                    f"borderw=2:"
+                    f"bordercolor=0x{bg_color}:"
+                    f"x=(w-text_w)/2:"
+                    f"y=(h-text_h)/2"
+                    f"[ct_text]"
+                )
+                filters.append(ct_filters)
 
-            text_filter = "".join(drawtext_parts)
-            filters.append(text_filter)
-            video_label = "video_with_ctext"
+                # 2. Rotate the text canvas
+                rot_filters = (
+                    f"[ct_text]rotate={rotation_rad}:c=0x00000000:"
+                    f"ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)"
+                    f"[ct_rot]"
+                )
+                filters.append(rot_filters)
+
+                # 3. Overlay on main video — center-based positioning
+                overlay_x = f"({pos.get('x_pct', 50)}*W/100-w/2)"
+                overlay_y = f"({pos.get('y_pct', 50)}*H/100-h/2)"
+                overlay_filter = (
+                    f"[{video_label}][ct_rot]overlay={overlay_x}:{overlay_y}:format=auto[video_with_ctext]"
+                )
+                filters.append(overlay_filter)
+                video_label = "video_with_ctext"
 
     filter_complex = ";".join(filters)
     cmd.extend(["-filter_complex", filter_complex])
