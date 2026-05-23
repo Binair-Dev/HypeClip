@@ -79,14 +79,17 @@ def _render_text_png(
     try:
         bb = ImageDraw.Draw(_d).textbbox((0, 0), text_upper, font=pil_font)
         tw, th = bb[2] - bb[0], bb[3] - bb[1]
-        tdx, tdy = -bb[0], -bb[1]
+        use_bb = True
     except AttributeError:
         tw, th = ImageDraw.Draw(_d).textsize(text_upper, font=pil_font)
-        tdx, tdy = 0, 0
+        use_bb = False
 
     bw = max(tw + padding * 2, 20)
     bh = max(th + padding * 2, 20)
-    radius = max(12, int(fontsize * 0.45))
+    # Radius is proportional to font size — matches the canvas preview formula (fontsize * 0.64)
+    radius = max(8, int(fontsize * 0.64))
+    # Clamp radius so corners don't overlap (Pillow requires radius <= min(w,h)/2)
+    radius = min(radius, bw // 2, bh // 2)
 
     bg_r, bg_g, bg_b = _hex(bg_color_hex)
     tx_r, tx_g, tx_b = _hex(text_color_hex)
@@ -107,7 +110,15 @@ def _render_text_png(
     except AttributeError:
         draw.rectangle([(0, 0), (bw - 1, bh - 1)], fill=(bg_r, bg_g, bg_b, bg_a))
 
-    draw.text((padding + tdx, padding + tdy), text_upper, font=pil_font,
+    # Center the text exactly within the box using textbbox metrics so the
+    # visual center of the text matches x_pct/y_pct in the output video
+    if use_bb:
+        text_draw_x = bw / 2 - (bb[0] + bb[2]) / 2
+        text_draw_y = bh / 2 - (bb[1] + bb[3]) / 2
+    else:
+        text_draw_x = (bw - tw) / 2
+        text_draw_y = (bh - th) / 2
+    draw.text((text_draw_x, text_draw_y), text_upper, font=pil_font,
               fill=(tx_r, tx_g, tx_b, 255))
 
     if abs(rotation_deg) > 0.1:
@@ -318,25 +329,31 @@ def _build_ffmpeg_command(
             visible_dur = max(0.01, end_t - start_t)
             fade_dur = min(fade_dur, visible_dur / 2)
 
-        # Build filter chain: source → optional fade in → optional fade out → overlay
+        # Build filter chain: source → optional geq alpha fade → overlay
+        # geq is more reliable than the fade filter for looped still-image inputs
+        # because it computes alpha directly from the frame timestamp T.
         src_label = f"ct_src_{ct_idx}"
         cur_label = src_label
-        filters.append(f"[{ct_input_idx}:v]fps=30,format=rgba[{src_label}]")
+        filters.append(f"[{ct_input_idx}:v]format=rgba[{src_label}]")
 
-        if transition in ("in", "both"):
-            fi_label = f"ct_fi_{ct_idx}"
-            filters.append(
-                f"[{cur_label}]fade=t=in:st={start_t:.3f}:d={fade_dur:.3f}:alpha=1[{fi_label}]"
+        a_expr = None
+        if transition == "in":
+            a_expr = f"clip((T-{start_t:.3f})/{fade_dur:.3f},0,1)*alpha(X\\,Y)"
+        elif transition == "out" and end_t is not None:
+            a_expr = f"clip(({end_t:.3f}-T)/{fade_dur:.3f},0,1)*alpha(X\\,Y)"
+        elif transition == "both" and end_t is not None:
+            a_expr = (
+                f"min(clip((T-{start_t:.3f})/{fade_dur:.3f},0,1),"
+                f"clip(({end_t:.3f}-T)/{fade_dur:.3f},0,1))*alpha(X\\,Y)"
             )
-            cur_label = fi_label
 
-        if transition in ("out", "both") and end_t is not None:
-            fo_st = max(start_t, end_t - fade_dur)
-            fo_label = f"ct_fo_{ct_idx}"
+        if a_expr is not None:
+            geq_label = f"ct_geq_{ct_idx}"
             filters.append(
-                f"[{cur_label}]fade=t=out:st={fo_st:.3f}:d={fade_dur:.3f}:alpha=1[{fo_label}]"
+                f"[{cur_label}]geq="
+                f"r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='{a_expr}'[{geq_label}]"
             )
-            cur_label = fo_label
+            cur_label = geq_label
 
         # Overlay position: center-based (png_w/png_h already account for rotation expand)
         x_pct = float(pos.get("x_pct", 50))

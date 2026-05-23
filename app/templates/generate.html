@@ -2484,13 +2484,14 @@
             ctx.globalAlpha = 0.7;
             ctx.translate(stCX, stCY);
             ctx.rotate(stRotRad);
+            var stRadius = Math.max(4, Math.round(stFontSize * 0.64));
             ctx.fillStyle = 'rgba(' + stBgR + ',' + stBgG + ',' + stBgB + ',' + stOpacity + ')';
-            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, 16);
+            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, stRadius);
             ctx.fill();
             ctx.strokeStyle = stBgColor;
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 3]);
-            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, 16);
+            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, stRadius);
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.font = 'bold ' + stFontSize + 'px sans-serif';
@@ -2544,15 +2545,17 @@
         ctx.translate(customTextCenterX, customTextCenterY);
         ctx.rotate(rotationRad);
 
+        var ctRadius = Math.max(4, Math.round(effectiveFontSize * 0.64));
+
         // Background box
         ctx.fillStyle = 'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + bgOpacity + ')';
-        roundRect(ctx, -halfW, -halfH, boxW, boxH, 16);
+        roundRect(ctx, -halfW, -halfH, boxW, boxH, ctRadius);
         ctx.fill();
 
         // Border
         ctx.strokeStyle = bgColor;
         ctx.lineWidth = 2;
-        roundRect(ctx, -halfW, -halfH, boxW, boxH, 16);
+        roundRect(ctx, -halfW, -halfH, boxW, boxH, ctRadius);
         ctx.stroke();
 
         // Text at effectiveFontSize — NOT derived from box height
