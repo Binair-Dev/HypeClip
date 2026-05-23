@@ -44,8 +44,75 @@ def _font_path() -> str:
         return str(_HEAVITAS_FONT)
     if os.path.exists(_FALLBACK_FONT):
         return _FALLBACK_FONT
-    # Last resort — let FFmpeg try its built-in default
     return "DejaVuSans-Bold.ttf"
+
+
+def _render_text_png(
+    text_value: str,
+    font_path: str,
+    fontsize: int,
+    text_color_hex: str,
+    bg_color_hex: str,
+    bg_opacity: float,
+    padding: int,
+    output_path: str,
+    rotation_deg: float = 0.0,
+) -> tuple:
+    """Render text with a rounded-corner background box to an RGBA PNG.
+
+    Returns (png_width, png_height) in video pixels.
+    """
+    from PIL import Image, ImageDraw, ImageFont  # lazy — only when needed
+
+    def _hex(h: str):
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    try:
+        pil_font = ImageFont.truetype(font_path, fontsize)
+    except Exception:
+        pil_font = ImageFont.load_default()
+
+    text_upper = text_value.upper()
+
+    # Measure text — getbbox available since Pillow 8.0
+    _d = Image.new("RGBA", (1, 1))
+    try:
+        bb = ImageDraw.Draw(_d).textbbox((0, 0), text_upper, font=pil_font)
+        tw, th = bb[2] - bb[0], bb[3] - bb[1]
+        tdx, tdy = -bb[0], -bb[1]
+    except AttributeError:
+        tw, th = ImageDraw.Draw(_d).textsize(text_upper, font=pil_font)
+        tdx, tdy = 0, 0
+
+    bw = max(tw + padding * 2, 20)
+    bh = max(th + padding * 2, 20)
+    radius = max(12, min(bw, bh) // 4)
+
+    bg_r, bg_g, bg_b = _hex(bg_color_hex)
+    tx_r, tx_g, tx_b = _hex(text_color_hex)
+    bg_a = int(bg_opacity * 255)
+
+    img = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    try:
+        draw.rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=radius,
+                                fill=(bg_r, bg_g, bg_b, bg_a))
+    except AttributeError:
+        draw.rectangle([(0, 0), (bw - 1, bh - 1)], fill=(bg_r, bg_g, bg_b, bg_a))
+
+    draw.text((padding + tdx, padding + tdy), text_upper, font=pil_font,
+              fill=(tx_r, tx_g, tx_b, 255))
+
+    if abs(rotation_deg) > 0.1:
+        try:
+            resample = Image.Resampling.BICUBIC
+        except AttributeError:
+            resample = Image.BICUBIC  # Pillow < 9.1
+        img = img.rotate(-rotation_deg, expand=True, resample=resample)
+
+    img.save(output_path, "PNG")
+    return img.width, img.height
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +142,7 @@ def _build_ffmpeg_command(
     cmd = ["ffmpeg", "-y", "-i", input_path]
 
     filters: list[str] = []
+    next_input_idx = 1  # tracks the next -i slot (input 0 = main video)
 
     # 1. Scale to 1920 height, then centre-crop to 1080 width
     main_filter = "[0:v]scale=-2:1920,crop=1080:1920:(in_w-1080)/2:0[main]"
@@ -145,24 +213,20 @@ def _build_ffmpeg_command(
     if custom_overlay:
         overlay_img = custom_overlay.get("image_path")
         if overlay_img and Path(overlay_img).exists():
-            # Add custom image as second input AFTER the video (input index 1)
             cmd.extend(["-i", overlay_img])
+            overlay_input_idx = next_input_idx
+            next_input_idx += 1
             pos = custom_overlay.get("position", {})
             height_pct = float(pos.get("height_pct", 10.0))
             rotation = float(pos.get("rotation", 0))
             x_pct = float(pos.get("x_pct", 50))
             y_pct = float(pos.get("y_pct", 50))
 
-            # Scale image: height_pct is % of 1920
             img_h = max(40, round(1920 * height_pct / 100))
-
-            # Rotation in radians for FFmpeg rotate filter
             rot_rad = rotation * math.pi / 180
 
-            # Scale image to target height, keep aspect ratio
-            # Input 1 is the custom image (added after video which is input 0)
             filters.append(
-                f"[1:v]scale=-2:{img_h},format=rgba[custom_scaled]"
+                f"[{overlay_input_idx}:v]scale=-2:{img_h},format=rgba[custom_scaled]"
             )
 
             # Apply rotation if non-zero
@@ -186,7 +250,8 @@ def _build_ffmpeg_command(
             )
             video_label = "video_with_overlay"
 
-    # 5. Custom text boxes — one drawtext pass per entry in custom_texts
+    # 5. Custom text boxes — rendered as RGBA PNGs (rounded corners via Pillow)
+    #    Each PNG is added as a looping input; timing and fades are applied in the filter graph.
     cleanup_files = []
     for ct_idx, custom_text in enumerate(custom_texts or []):
         text_value = custom_text.get("text", "")
@@ -200,93 +265,91 @@ def _build_ffmpeg_command(
 
         opacity_pct = int(custom_text.get("opacity", 85))
         bg_opacity = max(0.0, min(1.0, opacity_pct / 100.0))
-
         rotation_deg = float(custom_text.get("rotation", 0))
 
         fontsize_pct = float(pos.get("fontsize_pct", 3.0))
         fontsize = max(20, round(1920 * fontsize_pct / 100))
-
         padding_pct = int(custom_text.get("padding", 50))
         padding = max(4, round(fontsize * (0.2 + padding_pct * 0.016)))
 
-        if pos:
-            x_expr = f"({pos.get('x_pct', 50)}*w/100-text_w/2)"
-            y_expr = f"({pos.get('y_pct', 50)}*h/100-text_h/2)"
-        else:
-            x_expr = "(w-text_w)/2"
-            y_expr = "(h-text_h)/2"
+        # Render text to PNG (rounded corners + rotation baked in)
+        png_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False, prefix="hypeclip_ct_")
+        png_file.close()
+        cleanup_files.append(png_file.name)
 
-        text_file = tempfile.NamedTemporaryFile(
-            mode='w', suffix='.txt', delete=False, prefix='hypeclip_ctext_'
-        )
-        text_file.write(text_value.upper())
-        text_file.close()
-        cleanup_files.append(text_file.name)
+        try:
+            png_w, png_h = _render_text_png(
+                text_value=text_value,
+                font_path=font,
+                fontsize=fontsize,
+                text_color_hex=text_color,
+                bg_color_hex=bg_color,
+                bg_opacity=bg_opacity,
+                padding=padding,
+                output_path=png_file.name,
+                rotation_deg=rotation_deg,
+            )
+        except Exception:
+            log.exception("Failed to render text PNG for '%s'; skipping", text_value)
+            continue
+
+        # Add as a looping input (-loop 1 keeps the image alive for the video's duration)
+        cmd.extend(["-loop", "1", "-i", png_file.name])
+        ct_input_idx = next_input_idx
+        next_input_idx += 1
+
+        # Timing from frontend
+        timing = custom_text.get("timing") or {}
+        start_t = float(timing.get("start_time") or 0)
+        end_t_raw = timing.get("end_time")
+        end_t = float(end_t_raw) if end_t_raw is not None else None
+        transition = str(timing.get("transition") or "none")
+        fade_dur = float(timing.get("fade_duration") or 0.5)
+
+        # Clamp fade duration so it can't exceed half the text's visible window
+        if end_t is not None:
+            visible_dur = max(0.01, end_t - start_t)
+            fade_dur = min(fade_dur, visible_dur / 2)
+
+        # Build filter chain: source → optional fade in → optional fade out → overlay
+        src_label = f"ct_src_{ct_idx}"
+        cur_label = src_label
+        filters.append(f"[{ct_input_idx}:v]fps=30,format=rgba[{src_label}]")
+
+        if transition in ("in", "both"):
+            fi_label = f"ct_fi_{ct_idx}"
+            filters.append(
+                f"[{cur_label}]fade=t=in:st={start_t:.3f}:d={fade_dur:.3f}:alpha=1[{fi_label}]"
+            )
+            cur_label = fi_label
+
+        if transition in ("out", "both") and end_t is not None:
+            fo_st = max(start_t, end_t - fade_dur)
+            fo_label = f"ct_fo_{ct_idx}"
+            filters.append(
+                f"[{cur_label}]fade=t=out:st={fo_st:.3f}:d={fade_dur:.3f}:alpha=1[{fo_label}]"
+            )
+            cur_label = fo_label
+
+        # Overlay position: center-based (png_w/png_h already account for rotation expand)
+        x_pct = float(pos.get("x_pct", 50))
+        y_pct = float(pos.get("y_pct", 50))
+        ov_x = f"({x_pct}*W/100-{png_w // 2})"
+        ov_y = f"({y_pct}*H/100-{png_h // 2})"
+
+        # enable expression for timing
+        if end_t is not None:
+            enable = f":enable='between(t,{start_t:.3f},{end_t:.3f})'"
+        elif start_t > 0:
+            enable = f":enable='gte(t,{start_t:.3f})'"
+        else:
+            enable = ""
 
         out_label = f"video_with_ctext_{ct_idx}"
-
-        if abs(rotation_deg) < 0.1:
-            text_filter = (
-                f"[{video_label}]drawtext="
-                f"textfile='{text_file.name}':"
-                f"fontfile={font}:"
-                f"fontsize={fontsize}:"
-                f"fontcolor=0x{text_color}:"
-                f"box=1:"
-                f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
-                f"boxborderw={padding}:"
-                f"borderw=2:"
-                f"bordercolor=0x{bg_color}:"
-                f"x={x_expr}:"
-                f"y={y_expr}"
-                f"[{out_label}]"
-            )
-            filters.append(text_filter)
-            video_label = out_label
-        else:
-            rotation_rad = rotation_deg * math.pi / 180.0
-
-            text_len = len(text_value.upper())
-            canvas_w = int(fontsize * 0.65 * text_len) + padding * 4
-            canvas_h = int(fontsize * 1.5) + padding * 4
-            canvas_w = max(canvas_w, 200)
-            canvas_h = max(canvas_h, 100)
-
-            ct_text_label = f"ct_text_{ct_idx}"
-            ct_rot_label = f"ct_rot_{ct_idx}"
-
-            ct_filters = (
-                f"color=color=0x00000000:size={canvas_w}x{canvas_h}:rate=30,"
-                f"drawtext="
-                f"textfile='{text_file.name}':"
-                f"fontfile={font}:"
-                f"fontsize={fontsize}:"
-                f"fontcolor=0x{text_color}:"
-                f"box=1:"
-                f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
-                f"boxborderw={padding}:"
-                f"borderw=2:"
-                f"bordercolor=0x{bg_color}:"
-                f"x=(w-text_w)/2:"
-                f"y=(h-text_h)/2"
-                f"[{ct_text_label}]"
-            )
-            filters.append(ct_filters)
-
-            rot_filters = (
-                f"[{ct_text_label}]rotate={rotation_rad}:c=0x00000000:"
-                f"ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)"
-                f"[{ct_rot_label}]"
-            )
-            filters.append(rot_filters)
-
-            overlay_x = f"({pos.get('x_pct', 50)}*W/100-w/2)"
-            overlay_y = f"({pos.get('y_pct', 50)}*H/100-h/2)"
-            overlay_filter = (
-                f"[{video_label}][{ct_rot_label}]overlay={overlay_x}:{overlay_y}:format=auto:shortest=1[{out_label}]"
-            )
-            filters.append(overlay_filter)
-            video_label = out_label
+        filters.append(
+            f"[{video_label}][{cur_label}]overlay={ov_x}:{ov_y}:format=auto:shortest=1{enable}[{out_label}]"
+        )
+        video_label = out_label
 
     filter_complex = ";".join(filters)
     cmd.extend(["-filter_complex", filter_complex])

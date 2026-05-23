@@ -422,6 +422,51 @@
                 </button>
             </div>
         </div>
+        <!-- Row 3: Timeline + Transitions -->
+        <div class="border-t border-white/5 mt-2 pt-2 space-y-2">
+            <!-- Transition controls -->
+            <div class="flex items-center gap-3 flex-wrap">
+                <span class="text-gray-400 text-xs flex-shrink-0 w-14">Transition</span>
+                <div class="flex gap-1">
+                    <button id="ct-trans-none" onclick="setCtTransition('none')"
+                        class="px-2 py-1 text-xs rounded-md border transition-colors border-accent bg-accent/15 text-accent">Aucune</button>
+                    <button id="ct-trans-in" onclick="setCtTransition('in')"
+                        class="px-2 py-1 text-xs rounded-md border transition-colors border-white/10 text-gray-400 hover:border-accent/40">Fade In</button>
+                    <button id="ct-trans-out" onclick="setCtTransition('out')"
+                        class="px-2 py-1 text-xs rounded-md border transition-colors border-white/10 text-gray-400 hover:border-accent/40">Fade Out</button>
+                    <button id="ct-trans-both" onclick="setCtTransition('both')"
+                        class="px-2 py-1 text-xs rounded-md border transition-colors border-white/10 text-gray-400 hover:border-accent/40">Les deux</button>
+                </div>
+                <div id="ct-fade-dur-row" class="hidden flex items-center gap-2">
+                    <span class="text-gray-400 text-xs">Durée fade</span>
+                    <input type="range" id="ct-fade-duration" min="1" max="30" value="5"
+                           class="w-20 h-1 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
+                           oninput="onCtFadeDurSlider(this.value)" />
+                    <span id="ct-fade-duration-val" class="text-gray-400 text-xs w-8">0.5s</span>
+                </div>
+            </div>
+            <!-- Timeline -->
+            <div class="flex items-center gap-3">
+                <span class="text-gray-400 text-xs flex-shrink-0 w-14">Timeline</span>
+                <div class="flex-1">
+                    <div id="ct-timeline-track"
+                         class="relative h-4 bg-dark-700 rounded-full select-none cursor-pointer"
+                         onmousedown="onCtTimelineMouseDown(event)">
+                        <div id="ct-timeline-fill" class="absolute top-0 bottom-0 bg-accent/30 rounded-full pointer-events-none"></div>
+                        <div id="ct-handle-start"
+                             class="absolute top-1/2 w-3 h-5 bg-accent rounded cursor-ew-resize z-10 pointer-events-none"
+                             style="transform:translate(-50%,-50%);left:0%"></div>
+                        <div id="ct-handle-end"
+                             class="absolute top-1/2 w-3 h-5 bg-accent/60 rounded cursor-ew-resize z-10 pointer-events-none"
+                             style="transform:translate(-50%,-50%);left:100%"></div>
+                    </div>
+                    <div class="flex justify-between mt-1">
+                        <span id="ct-label-start" class="text-accent text-xs font-mono">0.0s</span>
+                        <span id="ct-label-end" class="text-gray-400 text-xs font-mono">fin</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -489,9 +534,17 @@
 
     // Custom text overlay state
     let customTextPosition = null; // { x_pct, y_pct, fontsize_pct }
-    let currentCustomTextClipIndex = null; // which clip is being edited
+    let currentCustomTextClipIndex = null;
     let currentCustomTextTextIndex = null; // null = new text, number = editing existing entry
-    let clipsCustomText = {}; // keyed by clip index: { 0: [{ text, text_color, bg_color, opacity, rotation, padding, position }, ...], ... }
+    let clipsCustomText = {}; // { clipIdx: [{ text, text_color, bg_color, opacity, rotation, padding, position, timing }, ...] }
+
+    // Timing state (reset each time the modal opens)
+    let customTextStartTime = 0;
+    let customTextEndTime = null;   // null = clip end
+    let customTextTransition = 'none';
+    let customTextFadeDuration = 0.5;
+    let ctClipDuration = 30;
+    let ctTimelineDragging = null;  // null | 'start' | 'end'
     let customTextCenterX = 0;   // center position in canvas coords
     let customTextCenterY = 0;
     let customTextOverlayW = 0;  // computed box width (for hit-test, updated by draw)
@@ -2183,6 +2236,10 @@
         // Load saved data for this clip/textIndex, or set defaults
         var clipTexts = clipsCustomText[clipIndex] || [];
         var saved = (currentCustomTextTextIndex !== null) ? clipTexts[currentCustomTextTextIndex] : null;
+
+        // Set clip duration for timeline
+        ctClipDuration = (clips[clipIndex] && clips[clipIndex].duration) ? clips[clipIndex].duration : 30;
+
         if (saved) {
             document.getElementById('custom-text-input').value = saved.text || '';
             document.getElementById('custom-text-color').value = saved.text_color || '#ffffff';
@@ -2190,11 +2247,16 @@
             document.getElementById('custom-text-opacity').value = saved.opacity !== undefined ? saved.opacity : 85;
             document.getElementById('custom-text-rotation').value = saved.rotation !== undefined ? saved.rotation : 0;
             document.getElementById('custom-text-padding').value = saved.padding !== undefined ? saved.padding : 50;
-            // Update display values
             document.getElementById('custom-text-opacity-val').textContent = (saved.opacity !== undefined ? saved.opacity : 85) + '%';
             document.getElementById('custom-text-rotation-val').textContent = (saved.rotation !== undefined ? saved.rotation : 0) + '°';
             document.getElementById('custom-text-padding-val').textContent = (saved.padding !== undefined ? saved.padding : 50) + '%';
             customTextPosition = saved.position || null;
+            // Restore timing
+            var t = saved.timing || {};
+            customTextStartTime = t.start_time || 0;
+            customTextEndTime = t.end_time !== undefined ? t.end_time : null;
+            customTextTransition = t.transition || 'none';
+            customTextFadeDuration = t.fade_duration || 0.5;
         } else {
             document.getElementById('custom-text-input').value = '';
             document.getElementById('custom-text-color').value = '#ffffff';
@@ -2206,7 +2268,17 @@
             document.getElementById('custom-text-rotation-val').textContent = '0°';
             document.getElementById('custom-text-padding-val').textContent = '50%';
             customTextPosition = null;
+            customTextStartTime = 0;
+            customTextEndTime = null;
+            customTextTransition = 'none';
+            customTextFadeDuration = 0.5;
         }
+
+        // Init timeline & transition UI
+        document.getElementById('ct-fade-duration').value = Math.round(customTextFadeDuration * 10);
+        document.getElementById('ct-fade-duration-val').textContent = customTextFadeDuration.toFixed(1) + 's';
+        setCtTransition(customTextTransition);
+        updateCtTimelineUI();
 
         var modal = document.getElementById('custom-text-modal');
         modal.classList.remove('hidden');
@@ -2409,16 +2481,16 @@
             var stBgB = parseInt(stBgColor.slice(5, 7), 16);
 
             ctx.save();
-            ctx.globalAlpha = 0.7; // slightly dimmed to distinguish from active text
+            ctx.globalAlpha = 0.7;
             ctx.translate(stCX, stCY);
             ctx.rotate(stRotRad);
             ctx.fillStyle = 'rgba(' + stBgR + ',' + stBgG + ',' + stBgB + ',' + stOpacity + ')';
-            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, 8);
+            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, 16);
             ctx.fill();
             ctx.strokeStyle = stBgColor;
             ctx.lineWidth = 1.5;
             ctx.setLineDash([4, 3]);
-            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, 8);
+            roundRect(ctx, -stBoxW / 2, -stBoxH / 2, stBoxW, stBoxH, 16);
             ctx.stroke();
             ctx.setLineDash([]);
             ctx.font = 'bold ' + stFontSize + 'px sans-serif';
@@ -2474,13 +2546,13 @@
 
         // Background box
         ctx.fillStyle = 'rgba(' + bgR + ',' + bgG + ',' + bgB + ',' + bgOpacity + ')';
-        roundRect(ctx, -halfW, -halfH, boxW, boxH, 8);
+        roundRect(ctx, -halfW, -halfH, boxW, boxH, 16);
         ctx.fill();
 
         // Border
         ctx.strokeStyle = bgColor;
         ctx.lineWidth = 2;
-        roundRect(ctx, -halfW, -halfH, boxW, boxH, 8);
+        roundRect(ctx, -halfW, -halfH, boxW, boxH, 16);
         ctx.stroke();
 
         // Text at effectiveFontSize — NOT derived from box height
@@ -2628,7 +2700,13 @@
                     opacity: parseInt(document.getElementById('custom-text-opacity').value),
                     rotation: parseInt(document.getElementById('custom-text-rotation').value),
                     padding: parseInt(document.getElementById('custom-text-padding').value),
-                    position: customTextPosition
+                    position: customTextPosition,
+                    timing: {
+                        start_time: customTextStartTime,
+                        end_time: customTextEndTime,
+                        transition: customTextTransition,
+                        fade_duration: customTextFadeDuration
+                    }
                 };
                 if (currentCustomTextTextIndex !== null) {
                     // Update existing entry
@@ -2651,6 +2729,78 @@
     window.closeCustomTextModal = function() {
         document.getElementById('custom-text-modal').classList.add('hidden');
         customTextDragging = false;
+        ctTimelineDragging = null;
+    };
+
+    // ---- Timeline helpers ----
+
+    function updateCtTimelineUI() {
+        var endT = customTextEndTime !== null ? customTextEndTime : ctClipDuration;
+        var startPct = Math.max(0, Math.min(100, (customTextStartTime / ctClipDuration) * 100));
+        var endPct = Math.max(0, Math.min(100, (endT / ctClipDuration) * 100));
+
+        document.getElementById('ct-handle-start').style.left = startPct + '%';
+        document.getElementById('ct-handle-end').style.left = endPct + '%';
+        document.getElementById('ct-timeline-fill').style.left = startPct + '%';
+        document.getElementById('ct-timeline-fill').style.right = (100 - endPct) + '%';
+
+        document.getElementById('ct-label-start').textContent = customTextStartTime.toFixed(1) + 's';
+        document.getElementById('ct-label-end').textContent =
+            customTextEndTime !== null ? customTextEndTime.toFixed(1) + 's' : 'fin';
+    }
+
+    window.onCtTimelineMouseDown = function(e) {
+        var track = document.getElementById('ct-timeline-track');
+        var rect = track.getBoundingClientRect();
+        var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        var t = pct * ctClipDuration;
+
+        var endT = customTextEndTime !== null ? customTextEndTime : ctClipDuration;
+        var distStart = Math.abs(t - customTextStartTime);
+        var distEnd = Math.abs(t - endT);
+
+        ctTimelineDragging = distStart <= distEnd ? 'start' : 'end';
+        e.preventDefault();
+    };
+
+    document.addEventListener('mousemove', function(e) {
+        if (!ctTimelineDragging) return;
+        var track = document.getElementById('ct-timeline-track');
+        if (!track) return;
+        var rect = track.getBoundingClientRect();
+        var pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        var t = parseFloat((pct * ctClipDuration).toFixed(2));
+
+        if (ctTimelineDragging === 'start') {
+            var endT = customTextEndTime !== null ? customTextEndTime : ctClipDuration;
+            customTextStartTime = Math.max(0, Math.min(t, endT - 0.1));
+        } else {
+            var newEnd = Math.max(customTextStartTime + 0.1, Math.min(t, ctClipDuration));
+            customTextEndTime = newEnd >= ctClipDuration - 0.05 ? null : newEnd;
+        }
+        updateCtTimelineUI();
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (ctTimelineDragging) ctTimelineDragging = null;
+    });
+
+    window.setCtTransition = function(type) {
+        customTextTransition = type;
+        var btns = { none: 'ct-trans-none', in: 'ct-trans-in', out: 'ct-trans-out', both: 'ct-trans-both' };
+        var activeClass = 'px-2 py-1 text-xs rounded-md border transition-colors border-accent bg-accent/15 text-accent';
+        var inactiveClass = 'px-2 py-1 text-xs rounded-md border transition-colors border-white/10 text-gray-400 hover:border-accent/40';
+        Object.keys(btns).forEach(function(k) {
+            var btn = document.getElementById(btns[k]);
+            if (btn) btn.className = (k === type) ? activeClass : inactiveClass;
+        });
+        var fadeRow = document.getElementById('ct-fade-dur-row');
+        if (fadeRow) fadeRow.classList.toggle('hidden', type === 'none');
+    };
+
+    window.onCtFadeDurSlider = function(val) {
+        customTextFadeDuration = parseInt(val) / 10;
+        document.getElementById('ct-fade-duration-val').textContent = customTextFadeDuration.toFixed(1) + 's';
     };
 
     // Start generation
