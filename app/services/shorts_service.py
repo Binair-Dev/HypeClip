@@ -86,18 +86,24 @@ def _render_text_png(
 
     bw = max(tw + padding * 2, 20)
     bh = max(th + padding * 2, 20)
-    radius = max(12, min(bw, bh) // 4)
+    radius = max(12, int(fontsize * 0.45))
 
     bg_r, bg_g, bg_b = _hex(bg_color_hex)
     tx_r, tx_g, tx_b = _hex(text_color_hex)
     bg_a = int(bg_opacity * 255)
+    outline_w = max(2, fontsize // 50)
 
     img = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     try:
-        draw.rounded_rectangle([(0, 0), (bw - 1, bh - 1)], radius=radius,
-                                fill=(bg_r, bg_g, bg_b, bg_a))
+        draw.rounded_rectangle(
+            [(0, 0), (bw - 1, bh - 1)],
+            radius=radius,
+            fill=(bg_r, bg_g, bg_b, bg_a),
+            outline=(bg_r, bg_g, bg_b, 255),
+            width=outline_w,
+        )
     except AttributeError:
         draw.rectangle([(0, 0), (bw - 1, bh - 1)], fill=(bg_r, bg_g, bg_b, bg_a))
 
@@ -294,7 +300,8 @@ def _build_ffmpeg_command(
             continue
 
         # Add as a looping input (-loop 1 keeps the image alive for the video's duration)
-        cmd.extend(["-loop", "1", "-i", png_file.name])
+        # -framerate 30 ensures monotonically increasing timestamps so fade=alpha=1 works
+        cmd.extend(["-framerate", "30", "-loop", "1", "-i", png_file.name])
         ct_input_idx = next_input_idx
         next_input_idx += 1
 
