@@ -60,7 +60,7 @@ def _build_ffmpeg_command(
     streamer_name: Optional[str] = None,
     name_position: Optional[dict] = None,
     custom_overlay: Optional[dict] = None,
-    custom_text: Optional[dict] = None,
+    custom_texts: Optional[list] = None,
 ) -> list:
     """Build an FFmpeg command that produces a 1080×1920 short.
 
@@ -69,7 +69,7 @@ def _build_ffmpeg_command(
     * If *streamer_name* is provided a drawtext filter is appended.
     * If *name_position* is provided the text overlay is positioned accordingly.
     * If *custom_overlay* is provided, an image is overlaid with rotation support.
-    * If *custom_text* is provided, a text box with background is drawn.
+    * If *custom_texts* is provided, one text box per entry is drawn (multiple supported).
     * Uses CPU encoding (libx264).
     """
     cmd = ["ffmpeg", "-y", "-i", input_path]
@@ -186,113 +186,107 @@ def _build_ffmpeg_command(
             )
             video_label = "video_with_overlay"
 
-    # 5. Custom text box overlay
+    # 5. Custom text boxes — one drawtext pass per entry in custom_texts
     cleanup_files = []
-    if custom_text:
+    for ct_idx, custom_text in enumerate(custom_texts or []):
         text_value = custom_text.get("text", "")
-        if text_value.strip():
-            font = _font_path()
-            # Strip leading '#' from colors sent by HTML color pickers
-            text_color = custom_text.get("text_color", "ffffff").lstrip('#')
-            bg_color = custom_text.get("bg_color", "000000").lstrip('#')
-            pos = custom_text.get("position", {})
+        if not text_value.strip():
+            continue
 
-            # Opacity: 0-100 from frontend → 0.0-1.0 for FFmpeg
-            opacity_pct = int(custom_text.get("opacity", 85))
-            bg_opacity = max(0.0, min(1.0, opacity_pct / 100.0))
+        font = _font_path()
+        text_color = custom_text.get("text_color", "ffffff").lstrip('#')
+        bg_color = custom_text.get("bg_color", "000000").lstrip('#')
+        pos = custom_text.get("position", {})
 
-            # Rotation: degrees from frontend
-            rotation_deg = float(custom_text.get("rotation", 0))
+        opacity_pct = int(custom_text.get("opacity", 85))
+        bg_opacity = max(0.0, min(1.0, opacity_pct / 100.0))
 
-            fontsize_pct = float(pos.get("fontsize_pct", 3.0))
-            fontsize = max(20, round(1920 * fontsize_pct / 100))
+        rotation_deg = float(custom_text.get("rotation", 0))
 
-            # Padding: 0-100 slider from frontend, mapped to fontsize multiplier
-            padding_pct = int(custom_text.get("padding", 50))
-            padding = max(4, round(fontsize * (0.2 + padding_pct * 0.016)))
+        fontsize_pct = float(pos.get("fontsize_pct", 3.0))
+        fontsize = max(20, round(1920 * fontsize_pct / 100))
 
-            # Position: center-based x_pct/y_pct
-            if pos:
-                x_expr = f"({pos.get('x_pct', 50)}*w/100-text_w/2)"
-                y_expr = f"({pos.get('y_pct', 50)}*h/100-text_h/2)"
-            else:
-                x_expr = "(w-text_w)/2"
-                y_expr = "(h-text_h)/2"
+        padding_pct = int(custom_text.get("padding", 50))
+        padding = max(4, round(fontsize * (0.2 + padding_pct * 0.016)))
 
-            # Write text to a temp file to avoid all shell-escaping issues
-            text_file = tempfile.NamedTemporaryFile(
-                mode='w', suffix='.txt', delete=False, prefix='hypeclip_ctext_'
+        if pos:
+            x_expr = f"({pos.get('x_pct', 50)}*w/100-text_w/2)"
+            y_expr = f"({pos.get('y_pct', 50)}*h/100-text_h/2)"
+        else:
+            x_expr = "(w-text_w)/2"
+            y_expr = "(h-text_h)/2"
+
+        text_file = tempfile.NamedTemporaryFile(
+            mode='w', suffix='.txt', delete=False, prefix='hypeclip_ctext_'
+        )
+        text_file.write(text_value.upper())
+        text_file.close()
+        cleanup_files.append(text_file.name)
+
+        out_label = f"video_with_ctext_{ct_idx}"
+
+        if abs(rotation_deg) < 0.1:
+            text_filter = (
+                f"[{video_label}]drawtext="
+                f"textfile='{text_file.name}':"
+                f"fontfile={font}:"
+                f"fontsize={fontsize}:"
+                f"fontcolor=0x{text_color}:"
+                f"box=1:"
+                f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
+                f"boxborderw={padding}:"
+                f"borderw=2:"
+                f"bordercolor=0x{bg_color}:"
+                f"x={x_expr}:"
+                f"y={y_expr}"
+                f"[{out_label}]"
             )
-            text_file.write(text_value.upper())
-            text_file.close()
-            cleanup_files.append(text_file.name)
+            filters.append(text_filter)
+            video_label = out_label
+        else:
+            rotation_rad = rotation_deg * math.pi / 180.0
 
-            if abs(rotation_deg) < 0.1:
-                # Simple path: no rotation — drawtext directly on video
-                text_filter = (
-                    f"[{video_label}]drawtext="
-                    f"textfile='{text_file.name}':"
-                    f"fontfile={font}:"
-                    f"fontsize={fontsize}:"
-                    f"fontcolor=0x{text_color}:"
-                    f"box=1:"
-                    f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
-                    f"boxborderw={padding}:"
-                    f"borderw=2:"
-                    f"bordercolor=0x{bg_color}:"
-                    f"x={x_expr}:"
-                    f"y={y_expr}"
-                    f"[video_with_ctext]"
-                )
-                filters.append(text_filter)
-                video_label = "video_with_ctext"
-            else:
-                # Complex path: use color source + drawtext + rotate + overlay
-                rotation_rad = rotation_deg * math.pi / 180.0
+            text_len = len(text_value.upper())
+            canvas_w = int(fontsize * 0.65 * text_len) + padding * 4
+            canvas_h = int(fontsize * 1.5) + padding * 4
+            canvas_w = max(canvas_w, 200)
+            canvas_h = max(canvas_h, 100)
 
-                # Estimate canvas size for text
-                text_len = len(text_value.upper())
-                canvas_w = int(fontsize * 0.65 * text_len) + padding * 4
-                canvas_h = int(fontsize * 1.5) + padding * 4
-                canvas_w = max(canvas_w, 200)
-                canvas_h = max(canvas_h, 100)
+            ct_text_label = f"ct_text_{ct_idx}"
+            ct_rot_label = f"ct_rot_{ct_idx}"
 
-                # 1. Create transparent canvas + draw text centered
-                # color= produces infinite frames — trim it to match video duration via shortest=1 on the final overlay
-                ct_filters = (
-                    f"color=color=0x00000000:size={canvas_w}x{canvas_h}:rate=30,"
-                    f"drawtext="
-                    f"textfile='{text_file.name}':"
-                    f"fontfile={font}:"
-                    f"fontsize={fontsize}:"
-                    f"fontcolor=0x{text_color}:"
-                    f"box=1:"
-                    f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
-                    f"boxborderw={padding}:"
-                    f"borderw=2:"
-                    f"bordercolor=0x{bg_color}:"
-                    f"x=(w-text_w)/2:"
-                    f"y=(h-text_h)/2"
-                    f"[ct_text]"
-                )
-                filters.append(ct_filters)
+            ct_filters = (
+                f"color=color=0x00000000:size={canvas_w}x{canvas_h}:rate=30,"
+                f"drawtext="
+                f"textfile='{text_file.name}':"
+                f"fontfile={font}:"
+                f"fontsize={fontsize}:"
+                f"fontcolor=0x{text_color}:"
+                f"box=1:"
+                f"boxcolor=0x{bg_color}@{bg_opacity:.2f}:"
+                f"boxborderw={padding}:"
+                f"borderw=2:"
+                f"bordercolor=0x{bg_color}:"
+                f"x=(w-text_w)/2:"
+                f"y=(h-text_h)/2"
+                f"[{ct_text_label}]"
+            )
+            filters.append(ct_filters)
 
-                # 2. Rotate the text canvas
-                rot_filters = (
-                    f"[ct_text]rotate={rotation_rad}:c=0x00000000:"
-                    f"ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)"
-                    f"[ct_rot]"
-                )
-                filters.append(rot_filters)
+            rot_filters = (
+                f"[{ct_text_label}]rotate={rotation_rad}:c=0x00000000:"
+                f"ow=hypot(iw\\,ih):oh=hypot(iw\\,ih)"
+                f"[{ct_rot_label}]"
+            )
+            filters.append(rot_filters)
 
-                # 3. Overlay on main video — shortest=1 so we stop when the video ends (not the infinite color source)
-                overlay_x = f"({pos.get('x_pct', 50)}*W/100-w/2)"
-                overlay_y = f"({pos.get('y_pct', 50)}*H/100-h/2)"
-                overlay_filter = (
-                    f"[{video_label}][ct_rot]overlay={overlay_x}:{overlay_y}:format=auto:shortest=1[video_with_ctext]"
-                )
-                filters.append(overlay_filter)
-                video_label = "video_with_ctext"
+            overlay_x = f"({pos.get('x_pct', 50)}*W/100-w/2)"
+            overlay_y = f"({pos.get('y_pct', 50)}*H/100-h/2)"
+            overlay_filter = (
+                f"[{video_label}][{ct_rot_label}]overlay={overlay_x}:{overlay_y}:format=auto:shortest=1[{out_label}]"
+            )
+            filters.append(overlay_filter)
+            video_label = out_label
 
     filter_complex = ";".join(filters)
     cmd.extend(["-filter_complex", filter_complex])
@@ -565,7 +559,7 @@ class ShortsService:
             streamer_name=streamer_name,
             name_position=options.get("name_position"),
             custom_overlay=custom_overlay,
-            custom_text=clip.get("custom_text") or options.get("custom_text"),
+            custom_texts=clip.get("custom_texts") or [],
         )
 
         self._update_clip_status(session_id, slug, "processing", 65)

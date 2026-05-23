@@ -490,7 +490,8 @@
     // Custom text overlay state
     let customTextPosition = null; // { x_pct, y_pct, fontsize_pct }
     let currentCustomTextClipIndex = null; // which clip is being edited
-    let clipsCustomText = {}; // keyed by clip index: { 0: { text, text_color, bg_color, opacity, rotation, padding, position }, ... }
+    let currentCustomTextTextIndex = null; // null = new text, number = editing existing entry
+    let clipsCustomText = {}; // keyed by clip index: { 0: [{ text, text_color, bg_color, opacity, rotation, padding, position }, ...], ... }
     let customTextCenterX = 0;   // center position in canvas coords
     let customTextCenterY = 0;
     let customTextOverlayW = 0;  // computed box width (for hit-test, updated by draw)
@@ -554,14 +555,19 @@
                         <i class="fas fa-clock mr-1"></i>${mm}:${ss}
                     </div>
                 </div>
-                <button onclick="openCustomTextModal(${i})"
-                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors
-                        ${clipsCustomText[i] && clipsCustomText[i].text
-                            ? 'border-green-500/60 text-green-400 bg-green-500/10'
-                            : 'border-white/10 text-gray-400 hover:border-accent/50 hover:text-accent hover:bg-accent/10'}"
-                    title="Custom Text">
-                    Ajouter du texte
-                </button>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    ${(clipsCustomText[i] || []).map((ct, ti) => `
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-500/15 border border-green-500/40 text-green-400 max-w-[120px]">
+                            <button onclick="openCustomTextModal(${i}, ${ti})" class="hover:text-white transition-colors truncate" title="${ct.text.replace(/"/g, '&quot;')}">${ct.text}</button>
+                            <button onclick="removeCustomText(${i}, ${ti})" class="hover:text-red-400 transition-colors flex-shrink-0"><i class="fas fa-xmark text-[10px]"></i></button>
+                        </span>
+                    `).join('')}
+                    <button onclick="openCustomTextModal(${i}, null)"
+                        class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors border-white/10 text-gray-400 hover:border-accent/50 hover:text-accent hover:bg-accent/10 flex-shrink-0"
+                        title="Ajouter du texte">
+                        <i class="fas fa-plus text-[10px]"></i> Ajouter du texte
+                    </button>
+                </div>
                 <button onclick="removeClip(${i})" class="text-gray-500 hover:text-red-400 transition-colors p-1" title="Remove">
                     <i class="fas fa-trash-can text-sm"></i>
                 </button>
@@ -677,6 +683,13 @@
             optionsSection.classList.add('hidden');
             startBtn.disabled = true;
         }
+    };
+
+    // Remove a single custom text chip from a clip
+    window.removeCustomText = function(clipIndex, textIndex) {
+        if (!clipsCustomText[clipIndex]) return;
+        clipsCustomText[clipIndex].splice(textIndex, 1);
+        renderClipList();
     };
 
     // ---- Webcam modal (global — same for all clips) ----
@@ -2160,13 +2173,16 @@
     };
 
     // ---- Custom Text Overlay Modal (per-clip) ----
-    window.openCustomTextModal = async function(clipIndex) {
+    // textIndex: null = add new text, number = edit existing text at that index
+    window.openCustomTextModal = async function(clipIndex, textIndex) {
         if (clips.length === 0 || clipIndex === undefined) return;
 
         currentCustomTextClipIndex = clipIndex;
+        currentCustomTextTextIndex = (textIndex !== null && textIndex !== undefined) ? textIndex : null;
 
-        // Load saved data for this clip, or set defaults
-        var saved = clipsCustomText[clipIndex];
+        // Load saved data for this clip/textIndex, or set defaults
+        var clipTexts = clipsCustomText[clipIndex] || [];
+        var saved = (currentCustomTextTextIndex !== null) ? clipTexts[currentCustomTextTextIndex] : null;
         if (saved) {
             document.getElementById('custom-text-input').value = saved.text || '';
             document.getElementById('custom-text-color').value = saved.text_color || '#ffffff';
@@ -2178,12 +2194,7 @@
             document.getElementById('custom-text-opacity-val').textContent = (saved.opacity !== undefined ? saved.opacity : 85) + '%';
             document.getElementById('custom-text-rotation-val').textContent = (saved.rotation !== undefined ? saved.rotation : 0) + '°';
             document.getElementById('custom-text-padding-val').textContent = (saved.padding !== undefined ? saved.padding : 50) + '%';
-            // Restore position if previously set
-            if (saved.position) {
-                customTextPosition = saved.position;
-            } else {
-                customTextPosition = null;
-            }
+            customTextPosition = saved.position || null;
         } else {
             document.getElementById('custom-text-input').value = '';
             document.getElementById('custom-text-color').value = '#ffffff';
@@ -2558,11 +2569,14 @@
             fontsize_pct: parseFloat(((effectiveFontSize / ch) * 100).toFixed(2))
         };
 
-        // Save per-clip custom text data
+        // Save per-clip custom text data (push new or update existing)
         if (currentCustomTextClipIndex !== null) {
             var textVal = document.getElementById('custom-text-input').value.trim();
+            if (!clipsCustomText[currentCustomTextClipIndex]) {
+                clipsCustomText[currentCustomTextClipIndex] = [];
+            }
             if (textVal) {
-                clipsCustomText[currentCustomTextClipIndex] = {
+                var entry = {
                     text: textVal,
                     text_color: document.getElementById('custom-text-color').value,
                     bg_color: document.getElementById('custom-text-bg-color').value,
@@ -2571,9 +2585,16 @@
                     padding: parseInt(document.getElementById('custom-text-padding').value),
                     position: customTextPosition
                 };
-            } else {
-                // No text entered — clear custom text for this clip
-                delete clipsCustomText[currentCustomTextClipIndex];
+                if (currentCustomTextTextIndex !== null) {
+                    // Update existing entry
+                    clipsCustomText[currentCustomTextClipIndex][currentCustomTextTextIndex] = entry;
+                } else {
+                    // Add new entry
+                    clipsCustomText[currentCustomTextClipIndex].push(entry);
+                }
+            } else if (currentCustomTextTextIndex !== null) {
+                // Text was cleared — remove this specific entry
+                clipsCustomText[currentCustomTextClipIndex].splice(currentCustomTextTextIndex, 1);
             }
         }
 
@@ -2620,18 +2641,22 @@
                     position: customImagePosition
                 };
             }
-            // Per-clip custom text
-            var ctData = clipsCustomText[i];
-            if (ctData && ctData.text && ctData.text.trim() && ctData.position) {
-                payload.custom_text = {
-                    text: ctData.text,
-                    text_color: ctData.text_color,
-                    bg_color: ctData.bg_color,
-                    opacity: ctData.opacity,
-                    rotation: ctData.rotation,
-                    padding: ctData.padding,
-                    position: ctData.position
-                };
+            // Per-clip custom texts (array)
+            var ctList = (clipsCustomText[i] || []).filter(function(ct) {
+                return ct && ct.text && ct.text.trim() && ct.position;
+            });
+            if (ctList.length > 0) {
+                payload.custom_texts = ctList.map(function(ct) {
+                    return {
+                        text: ct.text,
+                        text_color: ct.text_color,
+                        bg_color: ct.bg_color,
+                        opacity: ct.opacity,
+                        rotation: ct.rotation,
+                        padding: ct.padding,
+                        position: ct.position
+                    };
+                });
             }
             return payload;
         });
