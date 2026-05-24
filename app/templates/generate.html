@@ -862,10 +862,12 @@
         if (existing && existing.region) {
             selRect = Object.assign({}, existing.region);
             webcamRegion = existing.region;
+            webcamPosition = existing.position || null;
             hasSelection = true;
         } else {
             selRect = { x: 0, y: 0, w: 0, h: 0 };
             webcamRegion = null;
+            webcamPosition = null;
         }
 
         // Find first clip for this streamer to use as the reference frame
@@ -3071,8 +3073,9 @@ async function submitSavePreset() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, streamers, name_position }),
         });
-        const data = await resp.json();
-        if (data.error) { errEl.textContent = data.error; errEl.classList.remove('hidden'); return; }
+        let data;
+        try { data = await resp.json(); } catch(e) { throw new Error('Réponse invalide (' + resp.status + ')'); }
+        if (!resp.ok || data.error) { errEl.textContent = data.error || ('Erreur ' + resp.status); errEl.classList.remove('hidden'); return; }
 
         sessionStorage.setItem('preset_name', name);
         closeSavePresetModal();

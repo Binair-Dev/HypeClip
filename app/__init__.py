@@ -42,12 +42,24 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(presets_bp)
 
-    # Create tables and seed default admin
+    # Create tables, migrate schema, seed default admin
     with app.app_context():
         db.create_all()
+        _migrate_schema()
         _seed_admin()
 
     return app
+
+
+def _migrate_schema():
+    """Add columns introduced after initial schema creation."""
+    from sqlalchemy import text
+    # presets.name_position (added in v2)
+    try:
+        db.session.execute(text("SELECT name_position FROM presets LIMIT 1"))
+    except Exception:
+        db.session.execute(text("ALTER TABLE presets ADD COLUMN name_position TEXT"))
+        db.session.commit()
 
 
 def _seed_admin():
