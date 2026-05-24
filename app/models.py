@@ -80,6 +80,6 @@ class PresetStreamer(db.Model):
         return {
             'streamer_login':  self.streamer_login,
             'webcam_region':   json.loads(self.webcam_region) if self.webcam_region else None,
-            'webcam_position': self.webcam_position,
+            'webcam_position': json.loads(self.webcam_position) if self.webcam_position else None,
             'sort_order':      self.sort_order,
         }

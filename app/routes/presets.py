@@ -43,7 +43,7 @@ def create_preset():
             preset_id=preset.id,
             streamer_login=(s.get('streamer_login') or '').strip(),
             webcam_region=json.dumps(s['webcam_region']) if s.get('webcam_region') else None,
-            webcam_position=s.get('webcam_position'),
+            webcam_position=json.dumps(s['webcam_position']) if s.get('webcam_position') else None,
             sort_order=i,
         )
         db.session.add(ps)
@@ -74,7 +74,7 @@ def update_preset(preset_id):
                 preset_id=preset.id,
                 streamer_login=(s.get('streamer_login') or '').strip(),
                 webcam_region=json.dumps(s['webcam_region']) if s.get('webcam_region') else None,
-                webcam_position=s.get('webcam_position'),
+                webcam_position=json.dumps(s['webcam_position']) if s.get('webcam_position') else None,
                 sort_order=i,
             )
             db.session.add(ps)
