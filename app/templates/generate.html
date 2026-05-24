@@ -3089,7 +3089,7 @@ async function submitSavePreset() {
             setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 2500);
         });
     } catch(e) {
-        errEl.textContent = 'Erreur réseau';
+        errEl.textContent = e.message || 'Erreur réseau';
         errEl.classList.remove('hidden');
     }
 }

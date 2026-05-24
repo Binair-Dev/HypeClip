@@ -42,6 +42,11 @@ def create_app():
     app.register_blueprint(admin_bp)
     app.register_blueprint(presets_bp)
 
+    @app.errorhandler(401)
+    def unauthorized_handler(e):
+        from flask import jsonify
+        return jsonify({'error': 'Non authentifié. Veuillez vous connecter.'}), 401
+
     # Create tables, migrate schema, seed default admin
     with app.app_context():
         db.create_all()
