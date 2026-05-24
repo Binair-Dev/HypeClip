@@ -48,6 +48,8 @@ class Preset(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     name_position  = db.Column(db.Text, nullable=True)   # JSON {x_pct,y_pct,height_pct}
+    game_name      = db.Column(db.Text, nullable=True)   # auto-preset: game filter
+    clip_count     = db.Column(db.Integer, nullable=True) # auto-preset: clips to pick
 
     streamers = db.relationship(
         'PresetStreamer', backref='preset', lazy=True,
@@ -62,6 +64,8 @@ class Preset(db.Model):
             'created_at':    self.created_at.isoformat(),
             'updated_at':    self.updated_at.isoformat(),
             'name_position': json.loads(self.name_position) if self.name_position else None,
+            'game_name':     self.game_name,
+            'clip_count':    self.clip_count,
             'streamers':     [s.to_dict() for s in self.streamers],
         }
 

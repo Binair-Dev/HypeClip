@@ -98,19 +98,91 @@
         <div class="glass rounded-2xl overflow-hidden shadow-2xl">
             <div class="flex items-center justify-between px-5 py-4 border-b border-white/10">
                 <h3 class="font-bold text-white"><i class="fas fa-bookmark text-accent mr-2"></i>Mes Presets</h3>
-                <button onclick="closePresetsModal()" class="text-gray-500 hover:text-white transition-colors">
-                    <i class="fas fa-xmark text-lg"></i>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="openCreatePresetModal()"
+                        class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-accent/20 hover:bg-accent/30 text-accent font-medium transition-colors">
+                        <i class="fas fa-plus"></i> Nouveau
+                    </button>
+                    <button onclick="closePresetsModal()" class="text-gray-500 hover:text-white transition-colors">
+                        <i class="fas fa-xmark text-lg"></i>
+                    </button>
+                </div>
             </div>
             <div id="presets-list" class="max-h-[60vh] overflow-y-auto">
                 <div class="flex items-center justify-center py-12 text-gray-600">
                     <i class="fas fa-circle-notch fa-spin mr-2"></i> Chargement…
                 </div>
             </div>
-            <div class="px-5 py-4 border-t border-white/10 text-center">
-                <p class="text-xs text-gray-600">Les presets sauvegardent la liste des streamers et leurs configs webcam</p>
+        </div>
+    </div>
+</div>
+
+<!-- Create auto preset modal -->
+<div id="create-preset-modal" class="fixed inset-0 z-[60] hidden">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeCreatePresetModal()"></div>
+    <div class="relative max-w-md mx-auto mt-[5vh] px-4">
+        <div class="glass rounded-2xl p-6 shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-bold text-white"><i class="fas fa-wand-magic-sparkles text-accent mr-2"></i>Nouveau preset auto</h3>
+                <button onclick="closeCreatePresetModal()" class="text-gray-500 hover:text-white transition-colors">
+                    <i class="fas fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Nom du preset</label>
+                    <input id="cp-name" type="text" placeholder="Mon preset gaming…"
+                        class="w-full px-4 py-2.5 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600
+                               focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors text-sm" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Jeu</label>
+                    <input id="cp-game" type="text" placeholder="Fortnite, League of Legends…"
+                        class="w-full px-4 py-2.5 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600
+                               focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors text-sm" />
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs font-medium text-gray-400">Nombre de clips</label>
+                        <span id="cp-count-val" class="text-accent text-sm font-bold">5</span>
+                    </div>
+                    <input id="cp-count" type="range" min="1" max="20" value="5"
+                        class="w-full h-1.5 accent-[#00ff88] bg-dark-600 rounded-lg appearance-none cursor-pointer"
+                        oninput="document.getElementById('cp-count-val').textContent = this.value" />
+                    <div class="flex justify-between text-[10px] text-gray-600 mt-1"><span>1</span><span>20</span></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">
+                        Streamers <span class="text-gray-600 font-normal">(un par ligne)</span>
+                    </label>
+                    <textarea id="cp-streamers" rows="6" placeholder="shroud&#10;pokimane&#10;xqc&#10;…"
+                        class="w-full px-4 py-2.5 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600
+                               focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors
+                               resize-none font-mono text-sm"></textarea>
+                    <p class="text-[10px] text-gray-600 mt-1">Au chargement, X clips aléatoires des dernières 24h seront sélectionnés parmi ces streamers.</p>
+                </div>
+                <p id="cp-error" class="hidden text-red-400 text-sm"></p>
+                <div class="flex gap-3">
+                    <button onclick="closeCreatePresetModal()"
+                        class="flex-1 py-2.5 rounded-xl bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm transition-colors">
+                        Annuler
+                    </button>
+                    <button id="cp-submit" onclick="submitCreatePreset()"
+                        class="flex-1 py-2.5 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold transition-colors">
+                        Sauvegarder
+                    </button>
+                </div>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Loading overlay for auto-preset clip fetch -->
+<div id="preset-loading-overlay" class="fixed inset-0 z-[70] hidden bg-black/80 backdrop-blur-sm flex items-center justify-center">
+    <div class="glass rounded-2xl p-8 text-center max-w-xs mx-4">
+        <i class="fas fa-circle-notch fa-spin text-4xl text-accent mb-4"></i>
+        <h3 class="text-white text-base font-semibold mb-1">Récupération des clips…</h3>
+        <p id="preset-loading-text" class="text-gray-400 text-sm">Recherche en cours</p>
     </div>
 </div>
 
@@ -532,7 +604,7 @@
         document.body.style.overflow = '';
     };
 
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePlayer(); closePresetsModal(); closeSavePresetModal(); } });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePlayer(); closePresetsModal(); {% if current_user.is_authenticated %}closeCreatePresetModal();{% endif %} } });
 
     // ---- Presets (only if logged in) ----
     {% if current_user.is_authenticated %}
@@ -555,17 +627,23 @@
             const presets = await resp.json();
 
             if (!presets.length) {
-                list.innerHTML = '<div class="py-12 text-center text-gray-600"><i class="fas fa-bookmark text-3xl mb-3 block opacity-30"></i>Aucun preset sauvegardé</div>';
+                list.innerHTML = '<div class="py-12 text-center text-gray-600"><i class="fas fa-bookmark text-3xl mb-3 block opacity-30"></i>Aucun preset sauvegardé<br><span class="text-xs mt-1 block">Clique sur "+ Nouveau" pour en créer un</span></div>';
                 return;
             }
 
-            list.innerHTML = presets.map(p => `
+            list.innerHTML = presets.map(p => {
+                const isAuto = !!p.game_name;
+                const badge = isAuto
+                    ? `<span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent align-middle">Auto</span>`
+                    : '';
+                const subtitle = isAuto
+                    ? `<i class="fas fa-gamepad mr-1"></i>${escHtml(p.game_name)} &middot; ${p.clip_count || 5} clips &middot; ${p.streamers.length} streamers`
+                    : (p.streamers.map(s => escHtml(s.streamer_login)).join(', ') || 'Aucun streamer');
+                return `
                 <div class="flex items-center justify-between px-5 py-4 border-b border-white/5 last:border-0 hover:bg-white/3 transition-colors" id="preset-item-${p.id}">
-                    <div>
-                        <div class="text-white font-medium text-sm">${escHtml(p.name)}</div>
-                        <div class="text-xs text-gray-500 mt-0.5">
-                            ${p.streamers.map(s => escHtml(s.streamer_login)).join(', ') || 'Aucun streamer'}
-                        </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-white font-medium text-sm">${escHtml(p.name)}${badge}</div>
+                        <div class="text-xs text-gray-500 mt-0.5 truncate">${subtitle}</div>
                     </div>
                     <div class="flex items-center gap-2 ml-4 flex-shrink-0">
                         <button onclick="loadPreset(${p.id})"
@@ -577,7 +655,8 @@
                             <i class="fas fa-trash-can"></i>
                         </button>
                     </div>
-                </div>`).join('');
+                </div>`;
+            }).join('');
         } catch(e) {
             list.innerHTML = '<div class="py-8 text-center text-red-400 text-sm">Erreur lors du chargement</div>';
         }
@@ -590,28 +669,54 @@
             const preset = presets.find(p => p.id === presetId);
             if (!preset) return;
 
-            // Store configs in sessionStorage so generate page can restore them
-            const webcamConfigs = {};
-            preset.streamers.forEach(s => {
-                webcamConfigs[s.streamer_login] = {
-                    region:   s.webcam_region   || null,
-                    position: s.webcam_position || null,
-                };
-            });
-            sessionStorage.setItem('preset_webcams',       JSON.stringify(webcamConfigs));
-            sessionStorage.setItem('preset_name_position', JSON.stringify(preset.name_position || null));
-            sessionStorage.setItem('preset_name',          preset.name);
+            if (preset.game_name) {
+                // Auto preset → fetch random clips from Twitch then go to /generate
+                closePresetsModal();
+                const overlay = document.getElementById('preset-loading-overlay');
+                const txt = document.getElementById('preset-loading-text');
+                overlay.classList.remove('hidden');
+                txt.textContent = `Recherche parmi ${preset.streamers.length} streamers…`;
 
-            closePresetsModal();
-
-            // Add each streamer to workspace
-            for (const s of preset.streamers) {
-                if (addedStreamers[s.streamer_login]) continue;
                 try {
-                    const sr = await fetch('/search?q=' + encodeURIComponent(s.streamer_login));
-                    const sdata = await sr.json();
-                    if (sdata && sdata.login) addStreamer(sdata);
-                } catch(e) {}
+                    const clipsResp = await fetch(`/api/presets/${presetId}/clips`);
+                    const clipsData = await clipsResp.json();
+                    if (!clipsResp.ok || clipsData.error) {
+                        overlay.classList.add('hidden');
+                        alert(clipsData.error || 'Erreur lors de la récupération des clips');
+                        return;
+                    }
+                    sessionStorage.setItem('selected_clips',      JSON.stringify(clipsData.clips));
+                    sessionStorage.setItem('preset_webcams',       JSON.stringify({}));
+                    sessionStorage.setItem('preset_name_position', JSON.stringify(null));
+                    sessionStorage.setItem('preset_name',          preset.name);
+                    window.location.href = '/generate';
+                } catch(e) {
+                    overlay.classList.add('hidden');
+                    alert('Erreur réseau lors de la récupération des clips');
+                }
+            } else {
+                // Manual preset → restore webcam configs and add streamers to workspace
+                const webcamConfigs = {};
+                preset.streamers.forEach(s => {
+                    webcamConfigs[s.streamer_login] = {
+                        region:   s.webcam_region   || null,
+                        position: s.webcam_position || null,
+                    };
+                });
+                sessionStorage.setItem('preset_webcams',       JSON.stringify(webcamConfigs));
+                sessionStorage.setItem('preset_name_position', JSON.stringify(preset.name_position || null));
+                sessionStorage.setItem('preset_name',          preset.name);
+
+                closePresetsModal();
+
+                for (const s of preset.streamers) {
+                    if (addedStreamers[s.streamer_login]) continue;
+                    try {
+                        const sr = await fetch('/search?q=' + encodeURIComponent(s.streamer_login));
+                        const sdata = await sr.json();
+                        if (sdata && sdata.login) addStreamer(sdata);
+                    } catch(e) {}
+                }
             }
         } catch(e) {
             alert('Erreur lors du chargement du preset');
@@ -624,6 +729,77 @@
         const data = await resp.json();
         if (data.ok) {
             document.getElementById('preset-item-' + presetId)?.remove();
+            const list = document.getElementById('presets-list');
+            if (list && !list.querySelector('[id^="preset-item-"]')) {
+                list.innerHTML = '<div class="py-12 text-center text-gray-600"><i class="fas fa-bookmark text-3xl mb-3 block opacity-30"></i>Aucun preset sauvegardé<br><span class="text-xs mt-1 block">Clique sur "+ Nouveau" pour en créer un</span></div>';
+            }
+        }
+    };
+
+    window.openCreatePresetModal = function() {
+        closePresetsModal();
+        document.getElementById('create-preset-modal').classList.remove('hidden');
+        document.getElementById('cp-name').focus();
+    };
+
+    window.closeCreatePresetModal = function() {
+        document.getElementById('create-preset-modal').classList.add('hidden');
+        document.getElementById('cp-error').classList.add('hidden');
+    };
+
+    window.submitCreatePreset = async function() {
+        const name = document.getElementById('cp-name').value.trim();
+        const game = document.getElementById('cp-game').value.trim();
+        const count = parseInt(document.getElementById('cp-count').value) || 5;
+        const streamersRaw = document.getElementById('cp-streamers').value;
+        const errEl = document.getElementById('cp-error');
+        errEl.classList.add('hidden');
+
+        const streamers = streamersRaw
+            .split(/[\n,]+/)
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+
+        if (!name) { errEl.textContent = 'Donne un nom au preset'; errEl.classList.remove('hidden'); return; }
+        if (!game) { errEl.textContent = 'Précise un jeu'; errEl.classList.remove('hidden'); return; }
+        if (!streamers.length) { errEl.textContent = 'Ajoute au moins un streamer'; errEl.classList.remove('hidden'); return; }
+
+        const btn = document.getElementById('cp-submit');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-1"></i>Sauvegarde…';
+
+        try {
+            const resp = await fetch('/api/presets/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name,
+                    game_name: game,
+                    clip_count: count,
+                    streamers: streamers.map(login => ({ streamer_login: login })),
+                }),
+            });
+            let data;
+            try { data = await resp.json(); } catch(e) { throw new Error('Réponse invalide (' + resp.status + ')'); }
+            if (!resp.ok || data.error) {
+                errEl.textContent = data.error || ('Erreur ' + resp.status);
+                errEl.classList.remove('hidden');
+                return;
+            }
+            // Reset form and go back to preset list
+            document.getElementById('cp-name').value = '';
+            document.getElementById('cp-game').value = '';
+            document.getElementById('cp-count').value = 5;
+            document.getElementById('cp-count-val').textContent = '5';
+            document.getElementById('cp-streamers').value = '';
+            closeCreatePresetModal();
+            openPresetsModal();
+        } catch(e) {
+            errEl.textContent = e.message || 'Erreur réseau';
+            errEl.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Sauvegarder';
         }
     };
 

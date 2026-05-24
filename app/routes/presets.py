@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 
 from app.models import db, Preset, PresetStreamer
+from app.services import twitch_service as twitch_svc
 
 presets_bp = Blueprint('presets', __name__, url_prefix='/api/presets')
 
@@ -34,6 +35,8 @@ def create_preset():
         user_id=current_user.id,
         name=name,
         name_position=json.dumps(name_pos) if name_pos else None,
+        game_name=(data.get('game_name') or '').strip() or None,
+        clip_count=int(data['clip_count']) if data.get('clip_count') else None,
     )
     db.session.add(preset)
     db.session.flush()
@@ -67,6 +70,12 @@ def update_preset(preset_id):
     if 'name_position' in data:
         preset.name_position = json.dumps(data['name_position']) if data['name_position'] else None
 
+    if 'game_name' in data:
+        preset.game_name = (data['game_name'] or '').strip() or None
+
+    if 'clip_count' in data:
+        preset.clip_count = int(data['clip_count']) if data.get('clip_count') else None
+
     if 'streamers' in data:
         PresetStreamer.query.filter_by(preset_id=preset.id).delete()
         for i, s in enumerate(data['streamers']):
@@ -93,3 +102,28 @@ def delete_preset(preset_id):
     db.session.delete(preset)
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@presets_bp.route('/<int:preset_id>/clips', methods=['GET'])
+@login_required
+def get_preset_clips(preset_id):
+    preset = Preset.query.filter_by(id=preset_id, user_id=current_user.id).first()
+    if not preset:
+        return jsonify({'error': 'Preset introuvable'}), 404
+
+    if not preset.game_name:
+        return jsonify({'error': 'Ce preset n\'a pas de jeu configuré'}), 400
+
+    logins = [s.streamer_login for s in preset.streamers]
+    if not logins:
+        return jsonify({'error': 'Aucun streamer dans ce preset'}), 400
+
+    count = preset.clip_count or 5
+    clips = twitch_svc.get_clips_for_streamers_game(logins, preset.game_name, count)
+
+    if not clips:
+        return jsonify({
+            'error': f'Aucun clip "{preset.game_name}" trouvé dans les dernières 24h parmi ces streamers'
+        }), 404
+
+    return jsonify({'clips': clips, 'count': len(clips)})

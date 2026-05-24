@@ -59,11 +59,20 @@ def create_app():
 def _migrate_schema():
     """Add columns introduced after initial schema creation."""
     from sqlalchemy import text
-    # presets.name_position (added in v2)
+
+    _add_column(text("SELECT name_position FROM presets LIMIT 1"),
+                text("ALTER TABLE presets ADD COLUMN name_position TEXT"))
+    _add_column(text("SELECT game_name FROM presets LIMIT 1"),
+                text("ALTER TABLE presets ADD COLUMN game_name TEXT"))
+    _add_column(text("SELECT clip_count FROM presets LIMIT 1"),
+                text("ALTER TABLE presets ADD COLUMN clip_count INTEGER"))
+
+
+def _add_column(check_sql, alter_sql):
     try:
-        db.session.execute(text("SELECT name_position FROM presets LIMIT 1"))
+        db.session.execute(check_sql)
     except Exception:
-        db.session.execute(text("ALTER TABLE presets ADD COLUMN name_position TEXT"))
+        db.session.execute(alter_sql)
         db.session.commit()
 
 

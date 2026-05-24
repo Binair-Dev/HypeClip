@@ -193,6 +193,43 @@ def get_trending_clips(
     return results
 
 
+def get_clips_for_streamers_game(
+    streamer_logins: list[str],
+    game_name: str,
+    count: int,
+    period: str = "LAST_DAY",
+    sort: str = "VIEWS_DESC",
+    clips_per_streamer: int = 20,
+) -> list[dict]:
+    """Fetch random clips matching a game from a list of streamers in parallel."""
+    import random
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    game_lower = game_name.strip().lower()
+
+    def fetch_one(login: str) -> list[dict]:
+        clips = get_trending_clips(login, period=period, sort=sort, limit=clips_per_streamer)
+        return [c for c in clips if c.get('game', '').lower() == game_lower]
+
+    all_clips: list[dict] = []
+    max_workers = min(len(streamer_logins), 20)
+    if max_workers == 0:
+        return []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_one, login): login for login in streamer_logins}
+        for future in as_completed(futures):
+            try:
+                all_clips.extend(future.result())
+            except Exception as exc:
+                log.warning("get_clips_for_streamers_game: error for %r: %s", futures[future], exc)
+
+    if not all_clips:
+        return []
+
+    return random.sample(all_clips, min(count, len(all_clips)))
+
+
 def get_clip_download_url(clip_slug: str) -> Optional[str]:
     """Return the signed (direct-download) URL for a Twitch clip.
 
