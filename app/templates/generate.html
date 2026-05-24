@@ -55,20 +55,11 @@
                 </label>
             </div>
 
-            <!-- Webcam select & position buttons (shown when opt-webcam is checked) -->
-            <div id="webcam-position-row" class="hidden flex items-center justify-between pl-4">
-                <div class="text-gray-400 text-sm">Select & position the webcam on the Short</div>
-                <div class="flex items-center gap-2">
-                    <button id="btn-select-webcam" onclick="openWebcamSelectorGlobal()"
-                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">
-                        <i class="fas fa-crop-simple mr-1"></i>Select Webcam
-                        <span id="webcam-select-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
-                    </button>
-                    <button id="btn-position-webcam" onclick="openPositionModalGlobal()"
-                        class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent hidden">
-                        <i class="fas fa-arrows-up-down-left-right mr-1"></i>Position Webcam
-                        <span id="webcam-position-status" class="hidden text-green-400 ml-1"><i class="fas fa-circle-check"></i></span>
-                    </button>
+            <!-- Per-streamer webcam configuration (shown when opt-webcam is checked) -->
+            <div id="webcam-streamers-section" class="hidden pl-4">
+                <p class="text-gray-500 text-xs mb-2">Configure the webcam region once per streamer — applies to all their clips.</p>
+                <div id="webcam-streamers-list" class="space-y-1.5">
+                    <!-- Populated dynamically after clips load -->
                 </div>
             </div>
 
@@ -487,8 +478,10 @@
     let clips = [];
 
     // Webcam selection state (keyed by clip index)
-    let webcamRegion = null;    // { x, y, w, h } in pixel coords of original frame (global for all clips)
-    let webcamPosition = null;  // { x_pct, y_pct, height_pct } percentage of 9:16 canvas (global)
+    let webcamRegion = null;    // temp: region being configured in the current modal
+    let webcamPosition = null;  // temp: position being configured in the current modal
+    let streamerWebcams = {};   // { login: { region: {x,y,w,h}, position: {x_pct,y_pct,height_pct} } }
+    let activeWebcamStreamer = null;  // login of the streamer currently being configured
     let currentEditIndex = null;
     let frameImage = null;    // HTMLImageElement of the loaded frame
     let frameNaturalW = 0;
@@ -629,13 +622,14 @@
         });
     }
 
-    // Webcam toggle → show/hide webcam buttons row + re-render clip list
+    // Webcam toggle → show/hide per-streamer webcam section + re-render clip list
     optWebcam.addEventListener('change', function() {
-        var row = document.getElementById('webcam-position-row');
+        var section = document.getElementById('webcam-streamers-section');
         if (this.checked) {
-            row.classList.remove('hidden');
+            section.classList.remove('hidden');
+            buildWebcamStreamerRows();
         } else {
-            row.classList.add('hidden');
+            section.classList.add('hidden');
         }
         renderClipList();
     });
@@ -746,36 +740,88 @@
     };
 
     // ---- Webcam modal (global — same for all clips) ----
-    window.openWebcamSelectorGlobal = async function() {
-        if (clips.length === 0) {
-            alert('Please select at least one clip first.');
-            return;
-        }
-        // Use first clip to load frame
-        currentEditIndex = 0;
-        const modal = document.getElementById('webcam-modal');
-        const loading = document.getElementById('webcam-loading');
-        const canvasWrap = document.getElementById('webcam-canvas-wrap');
-        const coordsEl = document.getElementById('webcam-coords');
+    // Build per-streamer webcam configuration rows
+    function buildWebcamStreamerRows() {
+        var container = document.getElementById('webcam-streamers-list');
+        if (!container) return;
+
+        // Collect unique streamers in clip order
+        var seen = {};
+        var streamers = [];
+        clips.forEach(function(c) {
+            if (c.broadcaster_name && !seen[c.broadcaster_name]) {
+                seen[c.broadcaster_name] = true;
+                streamers.push(c.broadcaster_name);
+            }
+        });
+
+        container.innerHTML = '';
+        streamers.forEach(function(login) {
+            var wc = streamerWebcams[login];
+            var configured = wc && wc.region && wc.position;
+
+            var row = document.createElement('div');
+            row.id = 'webcam-row-' + login;
+            row.className = 'flex items-center justify-between py-1.5 border-b border-white/5 last:border-0';
+
+            var safeLogin = login.replace(/'/g, "\\'");
+            row.innerHTML =
+                '<span class="text-gray-200 text-sm font-medium capitalize">' + escHtml(login) + '</span>' +
+                '<div class="flex items-center gap-2">' +
+                    '<span id="webcam-status-' + escHtml(login) + '" class="' + (configured ? '' : 'hidden') + ' text-green-400 text-xs">' +
+                        '<i class="fas fa-circle-check"></i> Configured' +
+                    '</span>' +
+                    '<button onclick="openWebcamForStreamer(\'' + safeLogin + '\')" ' +
+                        'class="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-accent/20 bg-dark-600 text-gray-300 border-transparent">' +
+                        '<i class="fas fa-crop-simple mr-1"></i>' + (configured ? 'Reconfigure' : 'Configure') +
+                    '</button>' +
+                '</div>';
+            container.appendChild(row);
+        });
+    }
+
+    function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    window.openWebcamForStreamer = async function(login) {
+        activeWebcamStreamer = login;
+
+        var modal = document.getElementById('webcam-modal');
+        var loading = document.getElementById('webcam-loading');
+        var canvasWrap = document.getElementById('webcam-canvas-wrap');
+        var coordsEl = document.getElementById('webcam-coords');
 
         modal.classList.remove('hidden');
         loading.classList.remove('hidden');
         canvasWrap.classList.add('hidden');
-        coordsEl.textContent = '';
+        if (coordsEl) coordsEl.textContent = '';
         hasSelection = false;
 
-        // Pre-populate if region already set
-        if (webcamRegion) {
-            selRect = { ...webcamRegion };
+        // Pre-populate from existing config for this streamer
+        var existing = streamerWebcams[login];
+        if (existing && existing.region) {
+            selRect = Object.assign({}, existing.region);
+            webcamRegion = existing.region;
             hasSelection = true;
         } else {
             selRect = { x: 0, y: 0, w: 0, h: 0 };
+            webcamRegion = null;
         }
 
-        const slug = clips[0].slug;
+        // Find first clip for this streamer to use as the reference frame
+        var streamerClip = null;
+        for (var i = 0; i < clips.length; i++) {
+            if (clips[i].broadcaster_name === login) { streamerClip = clips[i]; break; }
+        }
+        if (!streamerClip) {
+            loading.classList.add('hidden');
+            modal.classList.add('hidden');
+            return;
+        }
+        currentEditIndex = clips.indexOf(streamerClip);
 
+        var slug = streamerClip.slug;
         try {
-            const img = new Image();
+            var img = new Image();
             img.crossOrigin = 'anonymous';
 
             await new Promise(function(resolve, reject) {
@@ -798,10 +844,9 @@
 
             loading.classList.add('hidden');
             canvasWrap.classList.remove('hidden');
-
             setupCanvas();
         } catch(err) {
-            console.error('Failed to load frame:', err);
+            console.error('Failed to load frame for ' + login + ':', err);
             loading.classList.add('hidden');
             alert('Failed to load clip frame. Please try again.');
             closeWebcamModal();
@@ -1134,7 +1179,6 @@
             return;
         }
         const canvas = document.getElementById('webcam-canvas');
-        // Convert canvas coords to original image pixel coords (integers)
         const scaleX = frameNaturalW / canvas.width;
         const scaleY = frameNaturalH / canvas.height;
         webcamRegion = {
@@ -1143,10 +1187,11 @@
             w: Math.round(selRect.w * scaleX),
             h: Math.round(selRect.h * scaleY)
         };
-        // Show select status checkmark, reveal position button
-        document.getElementById('webcam-select-status').classList.remove('hidden');
-        document.getElementById('btn-position-webcam').classList.remove('hidden');
-        // Close webcam modal and open position modal
+        // Save region to per-streamer config
+        if (activeWebcamStreamer) {
+            if (!streamerWebcams[activeWebcamStreamer]) streamerWebcams[activeWebcamStreamer] = {};
+            streamerWebcams[activeWebcamStreamer].region = webcamRegion;
+        }
         closeWebcamModal();
         openPositionModalGlobal();
     };
@@ -1481,14 +1526,17 @@
         if (!canvas) return;
         var cw = canvas.width;
         var ch = canvas.height;
-        // Save position as percentage of 9:16 canvas (global — same for all clips)
         webcamPosition = {
             x_pct: parseFloat(((posOverlayX / cw) * 100).toFixed(1)),
             y_pct: parseFloat(((posOverlayY / ch) * 100).toFixed(1)),
             height_pct: parseFloat(((posOverlayH / ch) * 100).toFixed(2))
         };
-        // Show position status checkmark
-        document.getElementById('webcam-position-status').classList.remove('hidden');
+        // Save position to per-streamer config and update UI row
+        if (activeWebcamStreamer) {
+            if (!streamerWebcams[activeWebcamStreamer]) streamerWebcams[activeWebcamStreamer] = {};
+            streamerWebcams[activeWebcamStreamer].position = webcamPosition;
+            updateWebcamRowUI(activeWebcamStreamer);
+        }
         closePositionModal();
     };
 
@@ -1500,9 +1548,15 @@
         currentEditIndex = null;
     };
 
-    // Also open position modal directly if user has region but no position
-    // (when clicking "Position Webcam" button — we reuse openWebcamSelector
-    // which loads the frame, then skip to position if region exists)
+    function updateWebcamRowUI(login) {
+        var statusEl = document.getElementById('webcam-status-' + login);
+        var rowEl = document.getElementById('webcam-row-' + login);
+        if (statusEl) statusEl.classList.remove('hidden');
+        if (rowEl) {
+            var btn = rowEl.querySelector('button');
+            if (btn) btn.innerHTML = '<i class="fas fa-crop-simple mr-1"></i>Reconfigure';
+        }
+    }
 
     // ---- Name position modal ----
     window.openNameModal = async function() {
@@ -1646,7 +1700,10 @@
         // Draw 9:16 background (center-cropped from frame)
         ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
 
-        // Draw webcam overlay indicator if webcam region & position are set
+        // Draw webcam overlay indicator if webcam region & position are set for this streamer
+        var _nameWC = (clips[0] && streamerWebcams[clips[0].broadcaster_name]) || {};
+        var webcamRegion = _nameWC.region || null;
+        var webcamPosition = _nameWC.position || null;
         if (webcamRegion && webcamPosition) {
             var camX = (webcamPosition.x_pct / 100) * cw;
             var camY = (webcamPosition.y_pct / 100) * ch;
@@ -2005,18 +2062,19 @@
         // Draw 9:16 background (center-cropped from frame)
         ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
 
-        // Draw webcam overlay if set
-        if (webcamRegion && webcamPosition) {
-            var camX = (webcamPosition.x_pct / 100) * cw;
-            var camY = (webcamPosition.y_pct / 100) * ch;
-            var camH = (webcamPosition.height_pct / 100) * ch;
-            var camW = camH * (webcamRegion.w / webcamRegion.h);
+        // Draw webcam overlay if set for this streamer
+        var _imgWC = (clips[0] && streamerWebcams[clips[0].broadcaster_name]) || {};
+        if (_imgWC.region && _imgWC.position) {
+            var camX = (_imgWC.position.x_pct / 100) * cw;
+            var camY = (_imgWC.position.y_pct / 100) * ch;
+            var camH = (_imgWC.position.height_pct / 100) * ch;
+            var camW = camH * (_imgWC.region.w / _imgWC.region.h);
 
             ctx.save();
             ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
             ctx.shadowBlur = 12;
             ctx.shadowOffsetY = 4;
-            ctx.drawImage(frameImage, webcamRegion.x, webcamRegion.y, webcamRegion.w, webcamRegion.h,
+            ctx.drawImage(frameImage, _imgWC.region.x, _imgWC.region.y, _imgWC.region.w, _imgWC.region.h,
                            camX, camY, camW, camH);
             ctx.restore();
             ctx.strokeStyle = '#00ff88';
@@ -2388,18 +2446,20 @@
         // 1. Draw 9:16 background (center-cropped from frame)
         ctx.drawImage(frameImage, crop.x, crop.y, crop.w, crop.h, 0, 0, cw, ch);
 
-        // 2. Draw webcam overlay if set
-        if (webcamRegion && webcamPosition) {
-            var camX = (webcamPosition.x_pct / 100) * cw;
-            var camY = (webcamPosition.y_pct / 100) * ch;
-            var camH = (webcamPosition.height_pct / 100) * ch;
-            var camW = camH * (webcamRegion.w / webcamRegion.h);
+        // 2. Draw webcam overlay for the current clip's streamer
+        var _ctClip = (currentCustomTextClipIndex !== null && clips[currentCustomTextClipIndex]) || clips[0];
+        var _ctWC = (_ctClip && streamerWebcams[_ctClip.broadcaster_name]) || {};
+        if (_ctWC.region && _ctWC.position) {
+            var camX = (_ctWC.position.x_pct / 100) * cw;
+            var camY = (_ctWC.position.y_pct / 100) * ch;
+            var camH = (_ctWC.position.height_pct / 100) * ch;
+            var camW = camH * (_ctWC.region.w / _ctWC.region.h);
 
             ctx.save();
             ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
             ctx.shadowBlur = 12;
             ctx.shadowOffsetY = 4;
-            ctx.drawImage(frameImage, webcamRegion.x, webcamRegion.y, webcamRegion.w, webcamRegion.h,
+            ctx.drawImage(frameImage, _ctWC.region.x, _ctWC.region.y, _ctWC.region.w, _ctWC.region.h,
                            camX, camY, camW, camH);
             ctx.restore();
             ctx.strokeStyle = '#00ff88';
@@ -2827,10 +2887,11 @@
                 broadcaster_name: clip.broadcaster_name,
                 thumbnail_url: clip.thumbnail_url,
             };
-            if (webcam && webcamRegion) {
-                payload.webcam_region = webcamRegion;
-                if (webcamPosition) {
-                    payload.webcam_position = webcamPosition;
+            if (webcam) {
+                var wc = streamerWebcams[clip.broadcaster_name];
+                if (wc && wc.region) {
+                    payload.webcam_region = wc.region;
+                    if (wc.position) payload.webcam_position = wc.position;
                 }
             }
             if (useCustomOverlay && customImageSrc && customImagePosition) {

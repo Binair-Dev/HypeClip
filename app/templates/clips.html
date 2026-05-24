@@ -136,7 +136,10 @@
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center">
                     <span id="selection-count" class="text-white text-sm font-bold">0</span>
                 </div>
-                <span class="text-gray-300 text-sm font-medium">clip{{ 's' }} selected</span>
+                <div>
+                    <span class="text-gray-300 text-sm font-medium">clips selected</span>
+                    <span id="streamer-badge" class="hidden ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400"></span>
+                </div>
             </div>
             <button
                 id="generate-btn"
@@ -175,6 +178,15 @@
     const selectedClips = [];
     const loadedCategories = {};  // cache: category -> clips array
     loadedCategories[activeCategory] = true; // server-rendered
+
+    // Accumulate clips across multiple streamers: preserve other streamers' selections
+    // and pre-populate this streamer's selections from sessionStorage.
+    let otherStreamersClips = [];
+    try {
+        const stored = JSON.parse(sessionStorage.getItem('selected_clips') || '[]');
+        otherStreamersClips = stored.filter(c => c.broadcaster_name !== STREAMER);
+        stored.filter(c => c.broadcaster_name === STREAMER).forEach(c => selectedClips.push(c));
+    } catch(e) { otherStreamersClips = []; }
 
     // --- Tab Switching ---
     window.switchTab = async function(category) {
@@ -232,16 +244,8 @@
 
         // Re-apply selection state
         selectedClips.forEach(sc => {
-            const card = grid.querySelector(`[data-slug="${sc.slug}"]`);
-            if (card) {
-                const btn = card.querySelector('.select-btn');
-                if (btn) {
-                    btn.querySelector('i').className = 'fas fa-square-check text-accent-light';
-                    btn.querySelector('span').textContent = 'Selected';
-                    btn.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
-                    btn.classList.remove('border-white/10');
-                }
-            }
+            const card = grid.querySelector('[data-slug="' + sc.slug + '"]');
+            if (card) applySelectionToCard(card.querySelector('.select-btn'), true);
         });
     };
 
@@ -295,10 +299,12 @@
         const bar = document.getElementById('selection-bar');
         const countEl = document.getElementById('selection-count');
         const btn = document.getElementById('generate-btn');
+        const badgeEl = document.getElementById('streamer-badge');
+        const total = otherStreamersClips.length + selectedClips.length;
 
-        countEl.textContent = selectedClips.length;
+        countEl.textContent = total;
 
-        if (selectedClips.length > 0) {
+        if (total > 0) {
             bar.classList.remove('translate-y-full');
             bar.classList.add('translate-y-0');
             btn.disabled = false;
@@ -307,33 +313,61 @@
             bar.classList.remove('translate-y-0');
             btn.disabled = true;
         }
+
+        // Show "N streamers" badge when selecting across multiple streamers
+        if (badgeEl) {
+            const uniqueStreamers = new Set(otherStreamersClips.map(c => c.broadcaster_name));
+            if (selectedClips.length > 0) uniqueStreamers.add(STREAMER);
+            if (uniqueStreamers.size > 1) {
+                badgeEl.textContent = uniqueStreamers.size + ' streamers';
+                badgeEl.classList.remove('hidden');
+            } else {
+                badgeEl.classList.add('hidden');
+            }
+        }
+
+        // Persist accumulated clips to sessionStorage immediately
+        sessionStorage.setItem('selected_clips', JSON.stringify([...otherStreamersClips, ...selectedClips]));
     }
+
+    function applySelectionToCard(btn, selected) {
+        if (!btn) return;
+        if (selected) {
+            btn.querySelector('i').className = 'fas fa-square-check text-accent-light';
+            btn.querySelector('span').textContent = 'Selected';
+            btn.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
+            btn.classList.remove('border-white/10');
+        } else {
+            btn.querySelector('i').className = 'far fa-square text-gray-400';
+            btn.querySelector('span').textContent = 'Select';
+            btn.classList.remove('bg-accent/20', 'border-accent', 'text-accent-light');
+            btn.classList.add('border-white/10');
+        }
+    }
+
+    // Pre-apply visual selection state for server-rendered cards on page load
+    selectedClips.forEach(sc => {
+        const card = document.querySelector('[data-slug="' + sc.slug + '"]');
+        if (card) applySelectionToCard(card.querySelector('.select-btn'), true);
+    });
+    updateBar();
 
     window.toggleSelect = function(btnEl, slug, title, duration, thumbnail) {
         const idx = selectedClips.findIndex(c => c.slug === slug);
-        const icon = btnEl.querySelector('i');
-        const text = btnEl.querySelector('span');
-
         if (idx >= 0) {
             selectedClips.splice(idx, 1);
-            icon.className = 'far fa-square text-gray-400';
-            text.textContent = 'Select';
-            btnEl.classList.remove('bg-accent/20', 'border-accent', 'text-accent-light');
-            btnEl.classList.add('border-white/10');
+            applySelectionToCard(btnEl, false);
         } else {
             selectedClips.push({ slug, title, duration: parseInt(duration), thumbnail_url: thumbnail, broadcaster_name: STREAMER });
-            icon.className = 'fas fa-square-check text-accent-light';
-            text.textContent = 'Selected';
-            btnEl.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
-            btnEl.classList.remove('border-white/10');
+            applySelectionToCard(btnEl, true);
         }
-
         updateBar();
     };
 
     window.goToGenerate = function() {
-        if (selectedClips.length === 0) return;
-        sessionStorage.setItem('selected_clips', JSON.stringify(selectedClips));
+        const total = otherStreamersClips.length + selectedClips.length;
+        if (total === 0) return;
+        // sessionStorage already updated by updateBar() on every toggle
         window.location.href = '/generate';
     };
 
