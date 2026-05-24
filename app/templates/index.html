@@ -3,91 +3,88 @@
 {% block title %}Home{% endblock %}
 
 {% block content %}
-<div class="flex flex-col items-center justify-center min-h-[calc(100vh-8rem)] px-4">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-28">
 
-    <!-- Demo Video -->
-    <div class="w-full max-w-7xl mb-8">
-        <div class="glass rounded-2xl p-3">
-            <div class="relative w-full overflow-hidden rounded-xl" style="padding-top:56.25%;">
-                <iframe
-                    class="absolute top-0 left-0 w-full h-full"
-                    src="https://www.youtube.com/embed/kP7oDOjxgTA?autoplay=1&mute=1&loop=1&playlist=kP7oDOjxgTA&modestbranding=1&rel=0"
-                    title="HypeClip Demo"
-                    frameborder="0"
-                    allow="autoplay; encrypted-media"
-                    allowfullscreen
-                ></iframe>
+    <!-- Search bar -->
+    <div class="flex flex-col items-center py-8">
+        <div class="glass rounded-2xl p-6 sm:p-8 w-full max-w-xl">
+            <label class="block text-sm font-medium text-gray-400 mb-3">
+                <i class="fas fa-magnifying-glass text-accent mr-1"></i>
+                Add a Twitch streamer
+            </label>
+            <div class="relative">
+                <input
+                    id="search-input"
+                    type="text"
+                    placeholder="e.g. shroud, pokimane, xqc..."
+                    autocomplete="off"
+                    class="w-full bg-dark-700 border border-white/10 rounded-xl px-4 py-3.5 pl-11
+                           text-white placeholder-gray-500 text-base
+                           focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50
+                           transition-all"
+                />
+                <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                <div id="search-spinner" class="hidden absolute right-4 top-1/2 -translate-y-1/2">
+                    <i class="fas fa-circle-notch fa-spin text-accent"></i>
+                </div>
             </div>
-        </div>
-    </div>
 
-    <!-- Search Card (glassmorphism) -->
-    <div class="glass rounded-2xl p-6 sm:p-8 w-full max-w-xl">
-        <label class="block text-sm font-medium text-gray-400 mb-3">
-            <i class="fas fa-magnifying-glass text-accent mr-1"></i>
-            Search for a Twitch streamer
-        </label>
-        <div class="relative">
-            <input
-                id="search-input"
-                type="text"
-                placeholder="e.g. shroud, pokimane, xqc..."
-                autocomplete="off"
-                class="w-full bg-dark-700 border border-white/10 rounded-xl px-4 py-3.5 pl-11
-                       text-white placeholder-gray-500 text-base
-                       focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50
-                       transition-all"
-            />
-            <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-500"></i>
-
-            <!-- Spinner -->
-            <div id="search-spinner" class="hidden absolute right-4 top-1/2 -translate-y-1/2">
-                <i class="fas fa-circle-notch fa-spin text-accent"></i>
+            <!-- Autocomplete dropdown -->
+            <div id="search-results" class="hidden mt-3 rounded-xl bg-dark-700 border border-white/10 overflow-hidden">
             </div>
+
+            <!-- Error -->
+            <p id="search-error" class="hidden mt-3 text-red-400 text-sm">
+                <i class="fas fa-circle-exclamation mr-1"></i>
+                <span id="search-error-text"></span>
+            </p>
         </div>
 
-        <!-- Autocomplete Results -->
-        <div id="search-results" class="hidden mt-3 rounded-xl bg-dark-700 border border-white/10 overflow-hidden">
-            <!-- Populated by JS -->
-        </div>
-
-        <!-- Error message -->
-        <p id="search-error" class="hidden mt-3 text-red-400 text-sm">
-            <i class="fas fa-circle-exclamation mr-1"></i>
-            <span id="search-error-text"></span>
+        <p id="search-hint" class="text-gray-600 text-sm mt-4 text-center">
+            <i class="fas fa-bolt text-accent/60 mr-1"></i>
+            Search a streamer and click to add their clips
         </p>
     </div>
 
-    <!-- Quick hint -->
-    <p class="text-gray-600 text-sm mt-6 text-center">
-        <i class="fas fa-bolt text-accent/60 mr-1"></i>
-        Type a streamer name and press <kbd class="px-1.5 py-0.5 bg-dark-700 rounded text-gray-400 text-xs">Enter</kbd>
-    </p>
+    <!-- Streamer sections added dynamically -->
+    <div id="streamers-workspace" class="space-y-8"></div>
+</div>
 
-    <!-- Workspace: clips currently queued across streamers -->
-    <div id="workspace-section" class="hidden w-full max-w-xl mt-6">
-        <div class="glass rounded-2xl p-5">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-sm font-semibold text-gray-300">
-                    <i class="fas fa-layer-group text-accent mr-1.5"></i>
-                    Queue
-                    <span id="ws-total-count" class="ml-1.5 text-xs text-gray-500"></span>
-                </h2>
-                <div class="flex items-center gap-2">
-                    <button onclick="clearWorkspace()"
-                        class="text-xs text-gray-600 hover:text-red-400 transition-colors">
-                        <i class="fas fa-trash-can mr-1"></i>Clear all
-                    </button>
-                    <a href="/generate" id="ws-generate-btn"
-                        class="px-4 py-1.5 bg-accent hover:bg-accent-dark text-white text-xs font-semibold rounded-lg transition-colors glow-accent">
-                        <i class="fas fa-wand-magic-sparkles mr-1"></i>Generate
-                    </a>
+<!-- Sticky selection bar -->
+<div id="selection-bar" class="fixed bottom-0 left-0 right-0 z-40 transform translate-y-full transition-transform duration-300">
+    <div class="bg-dark-800/95 backdrop-blur-md border-t border-white/10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center">
+                    <span id="selection-count" class="text-white text-sm font-bold">0</span>
+                </div>
+                <div>
+                    <span class="text-gray-300 text-sm font-medium">clips selected</span>
+                    <span id="streamers-badge" class="hidden ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400"></span>
                 </div>
             </div>
-            <div id="workspace-streamers" class="space-y-2">
-                <!-- Populated by JS -->
-            </div>
+            <button
+                id="generate-btn"
+                onclick="goToGenerate()"
+                class="px-6 py-2.5 bg-accent hover:bg-accent-dark text-white font-semibold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed glow-accent"
+                disabled
+            >
+                <i class="fas fa-wand-magic-sparkles mr-2"></i>Generate Shorts
+            </button>
         </div>
+    </div>
+</div>
+
+<!-- Player modal -->
+<div id="player-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closePlayer()"></div>
+    <div class="relative max-w-4xl mx-auto mt-[10vh] px-4">
+        <div class="flex justify-end mb-2">
+            <button onclick="closePlayer()" class="text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-xmark text-2xl"></i>
+            </button>
+        </div>
+        <div id="player-container" class="aspect-video bg-black rounded-xl overflow-hidden"></div>
     </div>
 </div>
 {% endblock %}
@@ -95,202 +92,417 @@
 {% block extra_js %}
 <script>
 (function() {
-    const input = document.getElementById('search-input');
-    const spinner = document.getElementById('search-spinner');
-    const resultsContainer = document.getElementById('search-results');
-    const errorEl = document.getElementById('search-error');
-    const errorText = document.getElementById('search-error-text');
+    const CATEGORIES = {
+        trending:    { label: 'Trending',    icon: 'fa-fire' },
+        most_viewed: { label: 'Most Viewed', icon: 'fa-eye' },
+        recent:      { label: 'Recent',      icon: 'fa-clock' },
+    };
 
-    let debounceTimer = null;
+    // login -> { display_name, profile_image_url, clips:{}, activeCategory, selectedSlugs:Set }
+    const addedStreamers = {};
+    let allSelectedClips = [];
 
-    function showError(msg) {
-        errorText.textContent = msg;
-        errorEl.classList.remove('hidden');
-    }
+    // Start fresh each visit
+    sessionStorage.removeItem('selected_clips');
 
-    function hideError() {
-        errorEl.classList.add('hidden');
-    }
+    // ---- Search ----
+    const input      = document.getElementById('search-input');
+    const spinner    = document.getElementById('search-spinner');
+    const resultsBox = document.getElementById('search-results');
+    const errorEl    = document.getElementById('search-error');
+    const errorText  = document.getElementById('search-error-text');
+    let debounce     = null;
 
-    function hideResults() {
-        resultsContainer.classList.add('hidden');
-        resultsContainer.innerHTML = '';
-    }
+    function showError(msg) { errorText.textContent = msg; errorEl.classList.remove('hidden'); }
+    function hideError()    { errorEl.classList.add('hidden'); }
+    function hideResults()  { resultsBox.classList.add('hidden'); resultsBox.innerHTML = ''; }
 
-    function showResult(result) {
-        resultsContainer.classList.remove('hidden');
+    function renderSearchResult(result) {
+        resultsBox.classList.remove('hidden');
 
-        const item = document.createElement('a');
-        item.href = '/clips/' + encodeURIComponent(result.login);
-        item.className = 'flex items-center gap-4 px-4 py-3 hover:bg-white/5 transition-colors cursor-pointer';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full flex items-center gap-4 px-4 py-3 hover:bg-white/5 transition-colors text-left';
 
-        const imgSize = 'w-10 h-10';
-        const placeholder = '<div class="w-10 h-10 rounded-full bg-dark-500 flex items-center justify-center text-gray-500"><i class="fas fa-user"></i></div>';
+        const already = !!addedStreamers[result.login];
+        const ph = `<div class="w-10 h-10 rounded-full bg-dark-500 flex items-center justify-center text-gray-500 flex-shrink-0"><i class="fas fa-user"></i></div>`;
         const avatar = result.profile_image_url
-            ? `<img src="${result.profile_image_url}" alt="" class="w-10 h-10 rounded-full object-cover" onerror="this.parentElement.innerHTML='${placeholder.replace(/'/g, "\\'")}'" />`
-            : placeholder;
-
+            ? `<img src="${escAttr(result.profile_image_url)}" alt="" class="w-10 h-10 rounded-full object-cover flex-shrink-0" onerror="this.style.display='none'" />`
+            : ph;
         const liveBadge = result.is_live
-            ? '<span class="flex items-center gap-1 text-xs text-red-400"><i class="fas fa-circle text-[6px]"></i> LIVE</span>'
-            : '<span class="text-xs text-gray-500">Offline</span>';
+            ? `<span class="flex items-center gap-1 text-xs text-red-400"><i class="fas fa-circle text-[6px]"></i> LIVE</span>`
+            : `<span class="text-xs text-gray-500">Offline</span>`;
+        const addedBadge = already
+            ? `<span class="text-xs text-accent ml-2"><i class="fas fa-check-circle"></i> Added</span>`
+            : '';
 
-        item.innerHTML = `
+        btn.innerHTML = `
             ${avatar}
             <div class="flex-1 min-w-0">
-                <div class="text-white font-medium truncate">${result.display_name}</div>
-                <div class="flex items-center gap-2">${liveBadge}</div>
+                <div class="flex items-center gap-1 text-white font-medium">${escHtml(result.display_name)}${addedBadge}</div>
+                <div>${liveBadge}</div>
             </div>
-            <i class="fas fa-chevron-right text-gray-600 text-xs"></i>
+            <i class="fas ${already ? 'fa-arrow-right text-gray-500' : 'fa-plus-circle text-accent'} text-sm"></i>
         `;
 
-        resultsContainer.appendChild(item);
+        btn.addEventListener('click', () => {
+            hideResults();
+            input.value = '';
+            hideError();
+            addStreamer(result);
+        });
+
+        resultsBox.appendChild(btn);
     }
 
-    async function search(query) {
-        if (!query || query.length < 2) {
-            hideResults();
-            hideError();
-            return;
-        }
-
+    async function doSearch(query) {
+        if (!query || query.length < 2) { hideResults(); hideError(); return; }
         spinner.classList.remove('hidden');
         hideError();
-
         try {
             const resp = await fetch('/search?q=' + encodeURIComponent(query));
-            if (!resp.ok) {
-                throw new Error('Search failed (' + resp.status + ')');
-            }
-
+            if (!resp.ok) throw new Error(resp.status);
             const data = await resp.json();
-
-            if (data.error) {
-                hideResults();
-                showError(data.error);
-                return;
-            }
-
-            if (!data || !data.login) {
-                hideResults();
-                showError('Streamer not found. Try another name.');
-                return;
-            }
-
-            // Show the single result
-            resultsContainer.innerHTML = '';
-            showResult(data);
-
+            if (data.error) { hideResults(); showError(data.error); return; }
+            if (!data || !data.login) { hideResults(); showError('Streamer not found. Try another name.'); return; }
+            resultsBox.innerHTML = '';
+            renderSearchResult(data);
         } catch (err) {
-            console.error('Search error:', err);
             showError('Something went wrong. Please try again.');
         } finally {
             spinner.classList.add('hidden');
         }
     }
 
-    // Debounced search on input
     input.addEventListener('input', function() {
-        clearTimeout(debounceTimer);
-        const query = this.value.trim();
-        if (query.length >= 2) {
-            debounceTimer = setTimeout(() => search(query), 400);
-        } else {
-            hideResults();
-            hideError();
-        }
+        clearTimeout(debounce);
+        const q = this.value.trim();
+        if (q.length >= 2) debounce = setTimeout(() => doSearch(q), 400);
+        else { hideResults(); hideError(); }
     });
 
-    // Enter key = redirect to first result
     input.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
             e.preventDefault();
-            const query = this.value.trim();
-            if (query.length >= 2) {
-                // If results are showing, click the first one
-                const firstResult = resultsContainer.querySelector('a');
-                if (firstResult) {
-                    window.location.href = firstResult.href;
-                } else {
-                    // Try searching and redirecting directly
-                    search(query);
-                }
-            }
+            const firstBtn = resultsBox.querySelector('button');
+            if (firstBtn) firstBtn.click();
+            else if (this.value.trim().length >= 2) doSearch(this.value.trim());
         }
+        if (e.key === 'Escape') hideResults();
     });
 
-    // Auto-focus
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#search-results') && !e.target.closest('#search-input')) hideResults();
+    });
+
     input.focus();
 
-    // ---- Workspace: show clips queued across multiple streamers ----
-    function loadWorkspace() {
-        var section = document.getElementById('workspace-section');
-        var container = document.getElementById('workspace-streamers');
-        var totalEl = document.getElementById('ws-total-count');
-        if (!section || !container) return;
+    // ---- Streamer workspace ----
 
-        var clips = [];
-        try { clips = JSON.parse(sessionStorage.getItem('selected_clips') || '[]'); } catch(e) {}
-
-        if (!clips.length) {
-            section.classList.add('hidden');
+    function addStreamer(result) {
+        const login = result.login;
+        if (addedStreamers[login]) {
+            document.getElementById('streamer-' + login)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
 
-        // Group by broadcaster_name
-        var groups = {};
-        var order = [];
-        clips.forEach(function(c) {
-            var name = c.broadcaster_name || 'unknown';
-            if (!groups[name]) { groups[name] = []; order.push(name); }
-            groups[name].push(c);
+        document.getElementById('search-hint').classList.add('hidden');
+
+        addedStreamers[login] = {
+            display_name: result.display_name,
+            profile_image_url: result.profile_image_url,
+            clips: {},
+            activeCategory: 'trending',
+            selectedSlugs: new Set(),
+        };
+
+        const workspace = document.getElementById('streamers-workspace');
+        const section   = document.createElement('div');
+        section.id        = 'streamer-' + login;
+        section.className = 'glass rounded-2xl overflow-hidden';
+
+        const ph = `<div class="w-8 h-8 rounded-full bg-dark-500 flex items-center justify-center text-gray-500 flex-shrink-0"><i class="fas fa-user text-xs"></i></div>`;
+        const avatar = result.profile_image_url
+            ? `<img src="${escAttr(result.profile_image_url)}" alt="" class="w-8 h-8 rounded-full object-cover flex-shrink-0" onerror="this.style.display='none'" />`
+            : ph;
+
+        const tabsHtml = Object.entries(CATEGORIES).map(([key, cat]) => `
+            <button id="tab-${login}-${key}" data-login="${escAttr(login)}" data-cat="${key}"
+                class="tab-btn px-5 py-3 text-sm font-medium rounded-t-xl transition-all flex items-center gap-2
+                       ${key === 'trending'
+                           ? 'bg-dark-700 text-accent-light border border-white/10 border-b-dark-700 -mb-px'
+                           : 'text-gray-400 hover:text-white hover:bg-white/5'}">
+                <i class="fas ${cat.icon}"></i>${cat.label}
+            </button>`
+        ).join('');
+
+        section.innerHTML = `
+            <div class="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <div class="flex items-center gap-3">
+                    ${avatar}
+                    <h2 class="text-white font-bold text-lg">${escHtml(result.display_name)}</h2>
+                </div>
+                <button data-remove="${escAttr(login)}" class="text-gray-600 hover:text-red-400 transition-colors">
+                    <i class="fas fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="px-5 pt-4">
+                <div class="flex gap-2 border-b border-white/10">${tabsHtml}</div>
+            </div>
+            <div class="p-5">
+                <div id="spinner-${login}" class="flex items-center justify-center py-16">
+                    <i class="fas fa-circle-notch fa-spin text-accent text-3xl"></i>
+                </div>
+                <div id="empty-${login}" class="hidden text-center py-12 text-gray-500">
+                    <i class="fas fa-face-sad-tear text-3xl mb-3 block"></i>
+                    No clips found in this category.
+                </div>
+                <div id="grid-${login}" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5" style="display:none"></div>
+            </div>`;
+
+        section.querySelector('[data-remove]').addEventListener('click', () => removeStreamer(login));
+        section.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => switchTab(btn.dataset.login, btn.dataset.cat));
         });
 
-        totalEl.textContent = '(' + clips.length + ' clips · ' + order.length + ' streamer' + (order.length > 1 ? 's' : '') + ')';
-
-        container.innerHTML = '';
-        order.forEach(function(login) {
-            var count = groups[login].length;
-            var row = document.createElement('div');
-            row.className = 'flex items-center justify-between py-2 border-b border-white/5 last:border-0';
-            row.innerHTML =
-                '<div class="flex items-center gap-2">' +
-                    '<span class="text-white text-sm font-medium capitalize">' + escHtml(login) + '</span>' +
-                    '<span class="text-xs text-gray-500">' + count + ' clip' + (count > 1 ? 's' : '') + '</span>' +
-                '</div>' +
-                '<div class="flex items-center gap-2">' +
-                    '<a href="/clips/' + encodeURIComponent(login) + '" class="text-xs text-accent hover:underline">' +
-                        '<i class="fas fa-plus mr-1"></i>Add more' +
-                    '</a>' +
-                    '<button onclick="clearStreamer(\'' + login.replace(/'/g, "\\'") + '\')" class="text-xs text-gray-600 hover:text-red-400 transition-colors ml-1">' +
-                        '<i class="fas fa-xmark"></i>' +
-                    '</button>' +
-                '</div>';
-            container.appendChild(row);
-        });
-
-        section.classList.remove('hidden');
+        workspace.appendChild(section);
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        loadCategory(login, 'trending');
     }
 
-    function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
-    window.clearWorkspace = function() {
-        sessionStorage.removeItem('selected_clips');
-        document.getElementById('workspace-section').classList.add('hidden');
-    };
-
-    window.clearStreamer = function(login) {
-        var clips = [];
-        try { clips = JSON.parse(sessionStorage.getItem('selected_clips') || '[]'); } catch(e) {}
-        clips = clips.filter(function(c) { return c.broadcaster_name !== login; });
-        if (clips.length) {
-            sessionStorage.setItem('selected_clips', JSON.stringify(clips));
-        } else {
-            sessionStorage.removeItem('selected_clips');
+    window.removeStreamer = function(login) {
+        document.getElementById('streamer-' + login)?.remove();
+        const st = addedStreamers[login];
+        if (st) {
+            allSelectedClips = allSelectedClips.filter(c => c.broadcaster_name !== login);
+            delete addedStreamers[login];
         }
-        loadWorkspace();
+        if (Object.keys(addedStreamers).length === 0) {
+            document.getElementById('search-hint').classList.remove('hidden');
+        }
+        updateBar();
     };
 
-    loadWorkspace();
+    window.switchTab = async function(login, category) {
+        const st = addedStreamers[login];
+        if (!st || st.activeCategory === category) return;
+        st.activeCategory = category;
+
+        Object.keys(CATEGORIES).forEach(key => {
+            const tab = document.getElementById('tab-' + login + '-' + key);
+            if (!tab) return;
+            const active = key === category;
+            tab.className = `tab-btn px-5 py-3 text-sm font-medium rounded-t-xl transition-all flex items-center gap-2 ${
+                active
+                    ? 'bg-dark-700 text-accent-light border border-white/10 border-b-dark-700 -mb-px'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`;
+        });
+
+        const grid    = document.getElementById('grid-' + login);
+        const spin    = document.getElementById('spinner-' + login);
+        const empty   = document.getElementById('empty-' + login);
+        grid.style.display = 'none';
+        grid.innerHTML = '';
+        empty.classList.add('hidden');
+        spin.classList.remove('hidden');
+
+        await loadCategory(login, category);
+    };
+
+    async function loadCategory(login, category) {
+        const st = addedStreamers[login];
+        if (!st) return;
+
+        if (!st.clips[category]) {
+            try {
+                const resp = await fetch('/api/clips/' + encodeURIComponent(login) + '/' + category);
+                const data = await resp.json();
+                st.clips[category] = Array.isArray(data) ? data : [];
+            } catch (err) {
+                st.clips[category] = [];
+            }
+        }
+
+        const grid  = document.getElementById('grid-' + login);
+        const spin  = document.getElementById('spinner-' + login);
+        const empty = document.getElementById('empty-' + login);
+
+        spin.classList.add('hidden');
+        const clips = st.clips[category];
+
+        if (!clips.length) { empty.classList.remove('hidden'); return; }
+
+        grid.innerHTML = clips.map(clip => renderClipCard(clip, login)).join('');
+        grid.style.display = '';
+
+        st.selectedSlugs.forEach(slug => {
+            const card = grid.querySelector(`[data-slug="${slug}"]`);
+            if (card) applySelected(card.querySelector('.select-btn'), true);
+        });
+
+        grid.querySelectorAll('.select-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const card = this.closest('[data-slug]');
+                const slug = card.dataset.slug;
+                const clip = clips.find(c => c.slug === slug);
+                if (!clip) return;
+                toggleSelect(this, clip, login);
+            });
+        });
+    }
+
+    function renderClipCard(clip, login) {
+        const mins  = String(Math.floor(clip.duration / 60)).padStart(2, '0');
+        const secs  = String(clip.duration % 60).padStart(2, '0');
+        const views = clip.view_count.toLocaleString();
+        const game  = clip.game
+            ? `<span class="truncate"><i class="fas fa-gamepad mr-1"></i>${escHtml(clip.game)}</span>`
+            : '';
+
+        return `
+        <div class="clip-card glass rounded-xl overflow-hidden group" data-slug="${escAttr(clip.slug)}">
+            <div class="relative aspect-video bg-dark-700 overflow-hidden cursor-pointer" data-play="${escAttr(clip.slug)}">
+                <img src="${escAttr(clip.thumbnail_url)}" alt="${escAttr(clip.title)}"
+                     class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                     loading="lazy"
+                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 320 180%22><rect fill=%22%231e1e1e%22 width=%22320%22 height=%22180%22/><text fill=%22%23333%22 x=%22160%22 y=%2295%22 text-anchor=%22middle%22 font-size=%2214%22>No thumbnail</text></svg>'" />
+                <div class="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                    <div class="w-14 h-14 rounded-full bg-accent/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity transform scale-75 group-hover:scale-100">
+                        <i class="fas fa-play text-white text-lg ml-1"></i>
+                    </div>
+                </div>
+                <div class="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-medium px-1.5 py-0.5 rounded">${mins}:${secs}</div>
+            </div>
+            <div class="p-4">
+                <h3 class="text-white font-semibold text-sm leading-snug mb-2 line-clamp-2 min-h-[2.5rem]">${escHtml(clip.title)}</h3>
+                <div class="flex items-center gap-3 text-xs text-gray-500 mb-4">
+                    <span><i class="fas fa-eye mr-1"></i>${views}</span>${game}
+                </div>
+                <div class="flex items-center gap-2">
+                    <button class="select-btn flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-white/10 text-sm font-medium transition-all hover:border-accent/50 hover:bg-accent/10">
+                        <i class="far fa-square text-gray-400"></i>
+                        <span class="text-gray-300">Select</span>
+                    </button>
+                    <a href="${escAttr(clip.clip_url)}" target="_blank" rel="noopener"
+                       class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-dark-600 hover:bg-dark-500 text-sm transition-colors">
+                        <i class="fab fa-twitch text-[#9147FF]"></i>
+                        <span class="hidden sm:inline text-gray-300">Twitch</span>
+                    </a>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // Delegate thumbnail click to openPlayer
+    document.getElementById('streamers-workspace').addEventListener('click', function(e) {
+        const thumb = e.target.closest('[data-play]');
+        if (thumb) openPlayer(thumb.dataset.play);
+    });
+
+    function applySelected(btn, selected) {
+        if (!btn) return;
+        const icon = btn.querySelector('i');
+        const lbl  = btn.querySelector('span');
+        if (selected) {
+            icon.className = 'fas fa-square-check text-accent-light';
+            lbl.textContent = 'Selected';
+            btn.classList.add('bg-accent/20', 'border-accent', 'text-accent-light');
+            btn.classList.remove('border-white/10');
+        } else {
+            icon.className = 'far fa-square text-gray-400';
+            lbl.textContent = 'Select';
+            btn.classList.remove('bg-accent/20', 'border-accent', 'text-accent-light');
+            btn.classList.add('border-white/10');
+        }
+    }
+
+    function toggleSelect(btnEl, clip, login) {
+        const st = addedStreamers[login];
+        if (!st) return;
+        const slug = clip.slug;
+
+        if (st.selectedSlugs.has(slug)) {
+            st.selectedSlugs.delete(slug);
+            allSelectedClips = allSelectedClips.filter(c => c.slug !== slug);
+            applySelected(btnEl, false);
+        } else {
+            st.selectedSlugs.add(slug);
+            allSelectedClips.push({
+                slug,
+                title:          clip.title,
+                duration:       clip.duration,
+                thumbnail_url:  clip.thumbnail_url,
+                broadcaster_name: login,
+            });
+            applySelected(btnEl, true);
+        }
+        updateBar();
+    }
+
+    function updateBar() {
+        const bar    = document.getElementById('selection-bar');
+        const count  = document.getElementById('selection-count');
+        const btn    = document.getElementById('generate-btn');
+        const badge  = document.getElementById('streamers-badge');
+        const total  = allSelectedClips.length;
+
+        count.textContent = total;
+        if (total > 0) {
+            bar.classList.remove('translate-y-full');
+            bar.classList.add('translate-y-0');
+            btn.disabled = false;
+        } else {
+            bar.classList.add('translate-y-full');
+            bar.classList.remove('translate-y-0');
+            btn.disabled = true;
+        }
+
+        const unique = new Set(allSelectedClips.map(c => c.broadcaster_name));
+        if (unique.size > 1) {
+            badge.textContent = unique.size + ' streamers';
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
+        }
+
+        sessionStorage.setItem('selected_clips', JSON.stringify(allSelectedClips));
+    }
+
+    window.goToGenerate = function() {
+        if (!allSelectedClips.length) return;
+        window.location.href = '/generate';
+    };
+
+    // ---- Player modal ----
+    window.openPlayer = function(slug) {
+        const modal = document.getElementById('player-modal');
+        const host  = window.location.hostname || 'localhost';
+        document.getElementById('player-container').innerHTML =
+            `<iframe src="https://clips.twitch.tv/embed?clip=${encodeURIComponent(slug)}&parent=${host}"
+                     width="100%" height="100%" allowfullscreen style="border:none;"></iframe>`;
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    };
+
+    window.closePlayer = function() {
+        document.getElementById('player-container').innerHTML = '';
+        document.getElementById('player-modal').classList.add('hidden');
+        document.body.style.overflow = '';
+    };
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
+
+    // ---- Helpers ----
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+    function escAttr(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/'/g, '&#39;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
 })();
 </script>
 {% endblock %}
