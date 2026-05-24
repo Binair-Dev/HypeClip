@@ -77,12 +77,6 @@
                         <span id="streamers-badge" class="hidden ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400"></span>
                     </div>
                 </div>
-                {% if current_user.is_authenticated %}
-                <button id="save-preset-btn" onclick="openSavePresetModal()"
-                    class="hidden items-center gap-1.5 px-3 py-1.5 rounded-lg border border-accent/40 text-accent-light text-xs font-medium hover:bg-accent/10 transition-colors">
-                    <i class="fas fa-bookmark"></i> Sauvegarder preset
-                </button>
-                {% endif %}
             </div>
             <button
                 id="generate-btn"
@@ -120,35 +114,6 @@
     </div>
 </div>
 
-<!-- Save preset modal -->
-<div id="save-preset-modal" class="fixed inset-0 z-50 hidden">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSavePresetModal()"></div>
-    <div class="relative max-w-sm mx-auto mt-[20vh] px-4">
-        <div class="glass rounded-2xl p-6 shadow-2xl">
-            <h3 class="font-bold text-white mb-4"><i class="fas fa-bookmark text-accent mr-2"></i>Sauvegarder le preset</h3>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Nom du preset</label>
-                    <input id="preset-name-input" type="text" placeholder="Mon montage gaming…"
-                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600
-                               focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors" />
-                </div>
-                <p class="text-xs text-gray-500">Les streamers actuels + configs webcam seront sauvegardés.</p>
-                <p id="save-preset-error" class="hidden text-red-400 text-sm"></p>
-                <div class="flex gap-3">
-                    <button onclick="closeSavePresetModal()"
-                        class="flex-1 py-2.5 rounded-xl bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm transition-colors">
-                        Annuler
-                    </button>
-                    <button onclick="submitSavePreset()"
-                        class="flex-1 py-2.5 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold transition-colors">
-                        Sauvegarder
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endif %}
 
 <!-- Player modal -->
@@ -521,7 +486,6 @@
         const count  = document.getElementById('selection-count');
         const btn    = document.getElementById('generate-btn');
         const badge  = document.getElementById('streamers-badge');
-        const saveBtn = document.getElementById('save-preset-btn');
         const total  = allSelectedClips.length;
 
         count.textContent = total;
@@ -529,14 +493,10 @@
             bar.classList.remove('translate-y-full');
             bar.classList.add('translate-y-0');
             btn.disabled = false;
-            saveBtn?.classList.remove('hidden');
-            saveBtn?.classList.add('flex');
         } else {
             bar.classList.add('translate-y-full');
             bar.classList.remove('translate-y-0');
             btn.disabled = true;
-            saveBtn?.classList.add('hidden');
-            saveBtn?.classList.remove('flex');
         }
 
         const unique = new Set(allSelectedClips.map(c => c.broadcaster_name));
@@ -630,22 +590,21 @@
             const preset = presets.find(p => p.id === presetId);
             if (!preset) return;
 
-            // Store webcam configs in sessionStorage for generate page
+            // Store configs in sessionStorage so generate page can restore them
             const webcamConfigs = {};
             preset.streamers.forEach(s => {
-                if (s.webcam_region || s.webcam_position) {
-                    webcamConfigs[s.streamer_login] = {
-                        region:   s.webcam_region,
-                        position: s.webcam_position,
-                    };
-                }
+                webcamConfigs[s.streamer_login] = {
+                    region:   s.webcam_region   || null,
+                    position: s.webcam_position || null,
+                };
             });
-            sessionStorage.setItem('preset_webcams', JSON.stringify(webcamConfigs));
-            sessionStorage.setItem('preset_name', preset.name);
+            sessionStorage.setItem('preset_webcams',       JSON.stringify(webcamConfigs));
+            sessionStorage.setItem('preset_name_position', JSON.stringify(preset.name_position || null));
+            sessionStorage.setItem('preset_name',          preset.name);
 
             closePresetsModal();
 
-            // Add each streamer (search their info first)
+            // Add each streamer to workspace
             for (const s of preset.streamers) {
                 if (addedStreamers[s.streamer_login]) continue;
                 try {
@@ -668,79 +627,9 @@
         }
     };
 
-    window.openSavePresetModal = function() {
-        const nameInput = document.getElementById('preset-name-input');
-        const stored = sessionStorage.getItem('preset_name');
-        nameInput.value = stored || '';
-        document.getElementById('save-preset-error').classList.add('hidden');
-        document.getElementById('save-preset-modal').classList.remove('hidden');
-        setTimeout(() => nameInput.focus(), 50);
-    };
-
-    window.closeSavePresetModal = function() {
-        document.getElementById('save-preset-modal').classList.add('hidden');
-    };
-
-    window.submitSavePreset = async function() {
-        const name = document.getElementById('preset-name-input').value.trim();
-        const errEl = document.getElementById('save-preset-error');
-        errEl.classList.add('hidden');
-
-        if (!name) {
-            errEl.textContent = 'Donne un nom au preset';
-            errEl.classList.remove('hidden');
-            return;
-        }
-
-        // Build streamers list from current workspace state
-        // Include webcam configs from streamerWebcams if available (generate page stores them)
-        const presetWebcams = JSON.parse(sessionStorage.getItem('preset_webcams') || '{}');
-        const streamers = Object.entries(addedStreamers).map(([login, st]) => {
-            const wc = presetWebcams[login] || {};
-            return {
-                streamer_login:  login,
-                webcam_region:   wc.region   || null,
-                webcam_position: wc.position || null,
-            };
-        });
-
-        try {
-            const resp = await fetch('/api/presets/', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, streamers }),
-            });
-            const data = await resp.json();
-            if (data.error) {
-                errEl.textContent = data.error;
-                errEl.classList.remove('hidden');
-                return;
-            }
-            sessionStorage.setItem('preset_name', name);
-            closeSavePresetModal();
-
-            // Brief visual feedback
-            const btn = document.getElementById('save-preset-btn');
-            if (btn) {
-                const orig = btn.innerHTML;
-                btn.innerHTML = '<i class="fas fa-check mr-1"></i> Sauvegardé !';
-                setTimeout(() => { btn.innerHTML = orig; }, 2000);
-            }
-        } catch(e) {
-            errEl.textContent = 'Erreur réseau';
-            errEl.classList.remove('hidden');
-        }
-    };
-
-    document.getElementById('preset-name-input')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') submitSavePreset();
-    });
-
     {% else %}
-    window.openPresetsModal   = () => openAuthModal('login');
-    window.closePresetsModal  = () => {};
-    window.openSavePresetModal = () => openAuthModal('login');
-    window.closeSavePresetModal = () => {};
+    window.openPresetsModal  = () => openAuthModal('login');
+    window.closePresetsModal = () => {};
     {% endif %}
 
     // ---- Helpers ----

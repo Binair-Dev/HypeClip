@@ -126,8 +126,8 @@
         </div>
     </div>
 
-    <!-- Generate Button -->
-    <div class="text-center">
+    <!-- Generate Button + Save Preset -->
+    <div class="flex flex-col items-center gap-4">
         <button
             id="start-btn"
             onclick="startGeneration()"
@@ -137,6 +137,12 @@
             <i class="fas fa-rocket mr-2"></i>
             <span id="btn-text">Generate Shorts</span>
         </button>
+        {% if current_user.is_authenticated %}
+        <button onclick="openSavePresetModal()"
+            class="flex items-center gap-2 px-5 py-2 rounded-xl border border-accent/30 text-accent-light text-sm font-medium hover:bg-accent/10 transition-colors">
+            <i class="fas fa-bookmark"></i> Sauvegarder la configuration comme preset
+        </button>
+        {% endif %}
     </div>
 
     <!-- Loading overlay -->
@@ -461,6 +467,38 @@
     </div>
 </div>
 
+{% if current_user.is_authenticated %}
+<!-- Save Preset modal -->
+<div id="save-preset-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeSavePresetModal()"></div>
+    <div class="relative max-w-sm mx-auto mt-[20vh] px-4">
+        <div class="glass rounded-2xl p-6 shadow-2xl">
+            <h3 class="font-bold text-white mb-1"><i class="fas fa-bookmark text-accent mr-2"></i>Sauvegarder le preset</h3>
+            <p class="text-xs text-gray-500 mb-4">Streamers + positions webcam + position du nom seront sauvegardés.</p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Nom du preset</label>
+                    <input id="save-preset-name" type="text" placeholder="Mon montage gaming…"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600
+                               focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors" />
+                </div>
+                <p id="save-preset-error" class="hidden text-red-400 text-sm"></p>
+                <div class="flex gap-3">
+                    <button onclick="closeSavePresetModal()"
+                        class="flex-1 py-2.5 rounded-xl bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm transition-colors">
+                        Annuler
+                    </button>
+                    <button onclick="submitSavePreset()"
+                        class="flex-1 py-2.5 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold transition-colors">
+                        Sauvegarder
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
@@ -481,6 +519,7 @@
     let webcamRegion = null;    // temp: region being configured in the current modal
     let webcamPosition = null;  // temp: position being configured in the current modal
     let streamerWebcams = {};   // { login: { region: {x,y,w,h}, position: {x_pct,y_pct,height_pct} } }
+    window._streamerWebcams = streamerWebcams;  // exposed for save-preset
     let activeWebcamStreamer = null;  // login of the streamer currently being configured
     let currentEditIndex = null;
     let frameImage = null;    // HTMLImageElement of the loaded frame
@@ -502,6 +541,7 @@
 
     // Name position modal state (global — same for all clips)
     let namePosition = null; // { x_pct, y_pct, height_pct } or null
+    Object.defineProperty(window, '_namePosition', { get: () => namePosition });
     let nameOverlayX = 0;
     let nameOverlayY = 0;
     let nameOverlayW = 0;
@@ -565,6 +605,27 @@
     } catch(e) {
         clips = [];
     }
+
+    // Restore preset configs from sessionStorage (set when loading a preset on index page)
+    try {
+        const pw = sessionStorage.getItem('preset_webcams');
+        if (pw) {
+            const parsed = JSON.parse(pw);
+            Object.entries(parsed).forEach(([login, cfg]) => {
+                if (cfg && (cfg.region || cfg.position)) {
+                    streamerWebcams[login] = { region: cfg.region || null, position: cfg.position || null };
+                }
+            });
+        }
+    } catch(e) {}
+
+    try {
+        const pnp = sessionStorage.getItem('preset_name_position');
+        if (pnp) {
+            const parsed = JSON.parse(pnp);
+            if (parsed) namePosition = parsed;
+        }
+    } catch(e) {}
 
     // If no clips, show empty state
     if (clips.length === 0) {
@@ -2959,5 +3020,81 @@
         }
     };
 })();
+
+{% if current_user.is_authenticated %}
+// ---- Save Preset (generate page) ----
+function openSavePresetModal() {
+    const nameInput = document.getElementById('save-preset-name');
+    nameInput.value = sessionStorage.getItem('preset_name') || '';
+    document.getElementById('save-preset-error').classList.add('hidden');
+    document.getElementById('save-preset-modal').classList.remove('hidden');
+    setTimeout(() => nameInput.focus(), 50);
+}
+
+function closeSavePresetModal() {
+    document.getElementById('save-preset-modal').classList.add('hidden');
+}
+
+async function submitSavePreset() {
+    const name  = document.getElementById('save-preset-name').value.trim();
+    const errEl = document.getElementById('save-preset-error');
+    errEl.classList.add('hidden');
+
+    if (!name) {
+        errEl.textContent = 'Donne un nom au preset';
+        errEl.classList.remove('hidden');
+        return;
+    }
+
+    // Collect unique streamers from clips
+    const clips = JSON.parse(sessionStorage.getItem('selected_clips') || '[]');
+    const seen = new Set();
+    const streamers = [];
+    const sw = window._streamerWebcams || {};
+    clips.forEach(c => {
+        const login = c.broadcaster_name;
+        if (!login || seen.has(login)) return;
+        seen.add(login);
+        const wc = sw[login] || {};
+        streamers.push({
+            streamer_login:  login,
+            webcam_region:   wc.region   || null,
+            webcam_position: wc.position || null,
+        });
+    });
+
+    const name_position = window._namePosition || null;
+
+    try {
+        const resp = await fetch('/api/presets/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, streamers, name_position }),
+        });
+        const data = await resp.json();
+        if (data.error) { errEl.textContent = data.error; errEl.classList.remove('hidden'); return; }
+
+        sessionStorage.setItem('preset_name', name);
+        closeSavePresetModal();
+
+        // Visual feedback on button
+        const saveBtns = document.querySelectorAll('[onclick="openSavePresetModal()"]');
+        saveBtns.forEach(b => {
+            const orig = b.innerHTML;
+            b.innerHTML = '<i class="fas fa-check mr-2"></i>Preset sauvegardé !';
+            b.disabled = true;
+            setTimeout(() => { b.innerHTML = orig; b.disabled = false; }, 2500);
+        });
+    } catch(e) {
+        errEl.textContent = 'Erreur réseau';
+        errEl.classList.remove('hidden');
+    }
+}
+
+document.getElementById('save-preset-name')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') submitSavePreset();
+    if (e.key === 'Escape') closeSavePresetModal();
+});
+{% endif %}
 </script>
 {% endblock %}

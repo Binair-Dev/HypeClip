@@ -47,6 +47,8 @@ class Preset(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    name_position  = db.Column(db.Text, nullable=True)   # JSON {x_pct,y_pct,height_pct}
+
     streamers = db.relationship(
         'PresetStreamer', backref='preset', lazy=True,
         cascade='all, delete-orphan',
@@ -55,11 +57,12 @@ class Preset(db.Model):
 
     def to_dict(self):
         return {
-            'id':         self.id,
-            'name':       self.name,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
-            'streamers':  [s.to_dict() for s in self.streamers],
+            'id':            self.id,
+            'name':          self.name,
+            'created_at':    self.created_at.isoformat(),
+            'updated_at':    self.updated_at.isoformat(),
+            'name_position': json.loads(self.name_position) if self.name_position else None,
+            'streamers':     [s.to_dict() for s in self.streamers],
         }
 
 
@@ -70,7 +73,7 @@ class PresetStreamer(db.Model):
     preset_id        = db.Column(db.Integer, db.ForeignKey('presets.id'), nullable=False)
     streamer_login   = db.Column(db.String(100), nullable=False)
     webcam_region    = db.Column(db.Text, nullable=True)   # JSON {x,y,w,h}
-    webcam_position  = db.Column(db.String(50), nullable=True)
+    webcam_position  = db.Column(db.Text, nullable=True)   # JSON {x_pct,y_pct,height_pct}
     sort_order       = db.Column(db.Integer, default=0)
 
     def to_dict(self):

@@ -29,7 +29,12 @@ def create_preset():
     if not name:
         return jsonify({'error': 'Nom requis'}), 400
 
-    preset = Preset(user_id=current_user.id, name=name)
+    name_pos = data.get('name_position')
+    preset = Preset(
+        user_id=current_user.id,
+        name=name,
+        name_position=json.dumps(name_pos) if name_pos else None,
+    )
     db.session.add(preset)
     db.session.flush()
 
@@ -58,6 +63,9 @@ def update_preset(preset_id):
 
     if 'name' in data:
         preset.name = (data['name'] or preset.name).strip()
+
+    if 'name_position' in data:
+        preset.name_position = json.dumps(data['name_position']) if data['name_position'] else None
 
     if 'streamers' in data:
         PresetStreamer.query.filter_by(preset_id=preset.id).delete()
