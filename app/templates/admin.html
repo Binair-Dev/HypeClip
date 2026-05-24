@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-white">Panel Admin</h1>
+            <p class="text-gray-500 text-sm mt-1">Gestion des utilisateurs</p>
+        </div>
+        <button onclick="openCreateModal()"
+            class="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-dark text-white text-sm font-semibold rounded-xl transition-colors glow-accent">
+            <i class="fas fa-plus"></i> Nouvel utilisateur
+        </button>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+        <div class="glass rounded-xl p-4 text-center">
+            <div class="text-3xl font-bold text-white">{{ users|length }}</div>
+            <div class="text-xs text-gray-500 mt-1">Utilisateurs total</div>
+        </div>
+        <div class="glass rounded-xl p-4 text-center">
+            <div class="text-3xl font-bold text-accent-light">{{ users|selectattr('role','equalto','admin')|list|length }}</div>
+            <div class="text-xs text-gray-500 mt-1">Administrateurs</div>
+        </div>
+        <div class="glass rounded-xl p-4 text-center">
+            <div class="text-3xl font-bold text-gray-300">{{ users|selectattr('role','equalto','member')|list|length }}</div>
+            <div class="text-xs text-gray-500 mt-1">Membres</div>
+        </div>
+    </div>
+
+    <!-- Users table -->
+    <div class="glass rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-white/10">
+            <h2 class="text-sm font-semibold text-gray-300">
+                <i class="fas fa-users text-accent mr-1.5"></i> Utilisateurs
+            </h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-white/10">
+                        <th class="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Utilisateur</th>
+                        <th class="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Rôle</th>
+                        <th class="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Créé le</th>
+                        <th class="px-5 py-3"></th>
+                    </tr>
+                </thead>
+                <tbody id="users-table-body">
+                    {% for user in users %}
+                    <tr class="border-b border-white/5 last:border-0 hover:bg-white/3 transition-colors" id="row-{{ user.id }}">
+                        <td class="px-5 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent-light font-bold text-sm">
+                                    {{ user.username[0].upper() }}
+                                </div>
+                                <span class="text-white font-medium">{{ user.username }}</span>
+                                {% if user.id == current_user.id %}
+                                    <span class="text-xs text-gray-600">(vous)</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-5 py-4">
+                            {% if user.role == 'admin' %}
+                                <span class="px-2 py-1 rounded-lg bg-accent/20 text-accent-light text-xs font-semibold">
+                                    <i class="fas fa-shield-halved mr-1"></i>Admin
+                                </span>
+                            {% else %}
+                                <span class="px-2 py-1 rounded-lg bg-dark-600 text-gray-400 text-xs font-semibold">
+                                    <i class="fas fa-user mr-1"></i>Membre
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-5 py-4 text-gray-500 text-xs">
+                            {{ user.created_at.strftime('%d/%m/%Y') }}
+                        </td>
+                        <td class="px-5 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button onclick="openEditModal({{ user.id }}, '{{ user.username }}', '{{ user.role }}')"
+                                    class="px-3 py-1.5 text-xs rounded-lg bg-dark-600 hover:bg-dark-500 text-gray-300 hover:text-white transition-colors">
+                                    <i class="fas fa-pen mr-1"></i>Modifier
+                                </button>
+                                {% if user.id != current_user.id %}
+                                <button onclick="deleteUser({{ user.id }}, '{{ user.username }}')"
+                                    class="px-3 py-1.5 text-xs rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors">
+                                    <i class="fas fa-trash-can mr-1"></i>Supprimer
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create user modal -->
+<div id="create-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeCreateModal()"></div>
+    <div class="relative max-w-sm mx-auto mt-[15vh] px-4">
+        <div class="glass rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-white mb-5">
+                <i class="fas fa-user-plus text-accent mr-2"></i>Nouvel utilisateur
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Nom d'utilisateur</label>
+                    <input id="create-username" type="text" placeholder="pseudo"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Mot de passe</label>
+                    <input id="create-password" type="password" placeholder="••••••••"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Rôle</label>
+                    <select id="create-role"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white focus:outline-none focus:border-accent/60 transition-colors">
+                        <option value="member">Membre</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <p id="create-error" class="hidden text-red-400 text-sm"></p>
+                <div class="flex gap-3 pt-1">
+                    <button onclick="closeCreateModal()"
+                        class="flex-1 py-2.5 rounded-xl bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm transition-colors">
+                        Annuler
+                    </button>
+                    <button onclick="submitCreate()"
+                        class="flex-1 py-2.5 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold transition-colors">
+                        Créer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit user modal -->
+<div id="edit-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeEditModal()"></div>
+    <div class="relative max-w-sm mx-auto mt-[15vh] px-4">
+        <div class="glass rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-white mb-5">
+                <i class="fas fa-pen text-accent mr-2"></i>Modifier l'utilisateur
+            </h3>
+            <input type="hidden" id="edit-user-id" />
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Nom d'utilisateur</label>
+                    <input id="edit-username" type="text"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Nouveau mot de passe <span class="text-gray-600">(laisser vide = inchangé)</span></label>
+                    <input id="edit-password" type="password" placeholder="••••••••"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white placeholder-gray-600 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-colors" />
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-400 mb-1.5">Rôle</label>
+                    <select id="edit-role"
+                        class="w-full px-4 py-3 rounded-xl bg-dark-700 border border-white/10 text-white focus:outline-none focus:border-accent/60 transition-colors">
+                        <option value="member">Membre</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <p id="edit-error" class="hidden text-red-400 text-sm"></p>
+                <div class="flex gap-3 pt-1">
+                    <button onclick="closeEditModal()"
+                        class="flex-1 py-2.5 rounded-xl bg-dark-600 hover:bg-dark-500 text-gray-300 text-sm transition-colors">
+                        Annuler
+                    </button>
+                    <button onclick="submitEdit()"
+                        class="flex-1 py-2.5 rounded-xl bg-accent hover:bg-accent-dark text-white text-sm font-semibold transition-colors">
+                        Enregistrer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openCreateModal() {
+    document.getElementById('create-username').value = '';
+    document.getElementById('create-password').value = '';
+    document.getElementById('create-role').value = 'member';
+    document.getElementById('create-error').classList.add('hidden');
+    document.getElementById('create-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('create-username').focus(), 50);
+}
+function closeCreateModal() { document.getElementById('create-modal').classList.add('hidden'); }
+
+async function submitCreate() {
+    const username = document.getElementById('create-username').value.trim();
+    const password = document.getElementById('create-password').value;
+    const role     = document.getElementById('create-role').value;
+    const errEl    = document.getElementById('create-error');
+    errEl.classList.add('hidden');
+
+    const resp = await fetch('/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, role }),
+    });
+    const data = await resp.json();
+    if (data.error) { errEl.textContent = data.error; errEl.classList.remove('hidden'); return; }
+
+    closeCreateModal();
+    window.location.reload();
+}
+
+function openEditModal(id, username, role) {
+    document.getElementById('edit-user-id').value = id;
+    document.getElementById('edit-username').value = username;
+    document.getElementById('edit-password').value = '';
+    document.getElementById('edit-role').value = role;
+    document.getElementById('edit-error').classList.add('hidden');
+    document.getElementById('edit-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('edit-username').focus(), 50);
+}
+function closeEditModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+
+async function submitEdit() {
+    const id       = document.getElementById('edit-user-id').value;
+    const username = document.getElementById('edit-username').value.trim();
+    const password = document.getElementById('edit-password').value;
+    const role     = document.getElementById('edit-role').value;
+    const errEl    = document.getElementById('edit-error');
+    errEl.classList.add('hidden');
+
+    const body = { username, role };
+    if (password) body.password = password;
+
+    const resp = await fetch(`/admin/users/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data.error) { errEl.textContent = data.error; errEl.classList.remove('hidden'); return; }
+
+    closeEditModal();
+    window.location.reload();
+}
+
+async function deleteUser(id, username) {
+    if (!confirm(`Supprimer l'utilisateur "${username}" ? Ses presets seront également supprimés.`)) return;
+    const resp = await fetch(`/admin/users/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); return; }
+    document.getElementById('row-' + id)?.remove();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeCreateModal(); closeEditModal(); }
+});
+</script>
+{% endblock %}
