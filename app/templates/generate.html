@@ -897,14 +897,6 @@
             frameNaturalW = img.naturalWidth;
             frameNaturalH = img.naturalHeight;
 
-            // If region already exists, skip straight to position modal
-            if (webcamRegion) {
-                loading.classList.add('hidden');
-                modal.classList.add('hidden');
-                openPositionModalGlobal();
-                return;
-            }
-
             loading.classList.add('hidden');
             canvasWrap.classList.remove('hidden');
             setupCanvas();
