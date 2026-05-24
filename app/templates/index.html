@@ -265,7 +265,7 @@
             btn.addEventListener('click', () => switchTab(btn.dataset.login, btn.dataset.cat));
         });
 
-        workspace.appendChild(section);
+        workspace.prepend(section);
         section.scrollIntoView({ behavior: 'smooth', block: 'start' });
         loadCategory(login, 'trending');
     }
