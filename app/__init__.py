@@ -8,8 +8,10 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-    # SQLite stored next to the project root
-    db_path = os.path.join(os.path.dirname(app.root_path), 'hypeclip.db')
+    # SQLite stored in the output folder (persisted Docker volume)
+    output_dir_early = os.path.join(app.root_path, '..', 'output')
+    os.makedirs(output_dir_early, exist_ok=True)
+    db_path = os.path.join(output_dir_early, 'hypeclip.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
