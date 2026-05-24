@@ -211,23 +211,26 @@ def get_clips_for_streamers_game(
         clips = get_trending_clips(login, period=period, sort=sort, limit=clips_per_streamer)
         return [c for c in clips if c.get('game', '').lower() == game_lower]
 
-    all_clips: list[dict] = []
     max_workers = min(len(streamer_logins), 20)
     if max_workers == 0:
         return []
 
+    # One random clip per streamer (ensures no duplicates per streamer)
+    one_per_streamer: list[dict] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(fetch_one, login): login for login in streamer_logins}
         for future in as_completed(futures):
             try:
-                all_clips.extend(future.result())
+                clips = future.result()
+                if clips:
+                    one_per_streamer.append(random.choice(clips))
             except Exception as exc:
                 log.warning("get_clips_for_streamers_game: error for %r: %s", futures[future], exc)
 
-    if not all_clips:
+    if not one_per_streamer:
         return []
 
-    return random.sample(all_clips, min(count, len(all_clips)))
+    return random.sample(one_per_streamer, min(count, len(one_per_streamer)))
 
 
 def get_clip_download_url(clip_slug: str) -> Optional[str]:
