@@ -467,6 +467,19 @@
     </div>
 </div>
 
+<!-- Clip player modal -->
+<div id="clip-player-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeClipPlayer()"></div>
+    <div class="relative max-w-4xl mx-auto mt-[10vh] px-4">
+        <div class="flex justify-end mb-2">
+            <button onclick="closeClipPlayer()" class="text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-xmark text-2xl"></i>
+            </button>
+        </div>
+        <div id="clip-player-container" class="aspect-video bg-black rounded-xl overflow-hidden"></div>
+    </div>
+</div>
+
 {% if current_user.is_authenticated %}
 <!-- Save Preset modal -->
 <div id="save-preset-modal" class="fixed inset-0 z-50 hidden">
@@ -654,8 +667,14 @@
 
             item.innerHTML = `
                 <span class="text-gray-500 text-sm font-mono w-6 text-center">${i + 1}</span>
-                <img src="${clip.thumbnail_url || ''}" alt="" class="w-24 h-14 object-cover rounded-md bg-dark-600 flex-shrink-0"
-                     onerror="this.style.display='none'" />
+                <div class="relative w-24 h-14 flex-shrink-0 group cursor-pointer rounded-md overflow-hidden bg-dark-600"
+                     onclick="openClipPlayer('${clip.slug}')">
+                    <img src="${clip.thumbnail_url || ''}" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                         onerror="this.style.display='none'" />
+                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                        <i class="fas fa-play text-white text-lg opacity-0 group-hover:opacity-100 transition-opacity drop-shadow"></i>
+                    </div>
+                </div>
                 <div class="flex-1 min-w-0">
                     <div class="text-white text-sm font-medium truncate">${clip.title || 'Untitled Clip'}</div>
                     <div class="text-gray-500 text-xs mt-0.5">
@@ -766,6 +785,21 @@
     });
 
     // Remove a clip from selection
+    window.openClipPlayer = function(slug) {
+        const host = window.location.hostname || 'localhost';
+        document.getElementById('clip-player-container').innerHTML =
+            `<iframe src="https://clips.twitch.tv/embed?clip=${encodeURIComponent(slug)}&parent=${host}"
+                     width="100%" height="100%" allowfullscreen style="border:none;"></iframe>`;
+        document.getElementById('clip-player-modal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    };
+
+    window.closeClipPlayer = function() {
+        document.getElementById('clip-player-container').innerHTML = '';
+        document.getElementById('clip-player-modal').classList.add('hidden');
+        document.body.style.overflow = '';
+    };
+
     window.removeClip = function(index) {
         clips.splice(index, 1);
         sessionStorage.setItem('selected_clips', JSON.stringify(clips));
@@ -1262,6 +1296,7 @@
     // Close modals on Escape
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
+            closeClipPlayer();
             closePositionModal();
             closeWebcamModal();
             closeNameModal();
